@@ -12,3 +12,7 @@ Initializing a storage variable is one of the most expensive operations a contra
 When a storage variable goes from zero to non-zero, the user must pay 22,100 gas total (20,000 gas for a zero to non-zero write and 2,100 for a cold storage access).
 
 This is why the Openzeppelin reentrancy guard registers functions as active or not with 1 and 2 rather than 0 and 1. It only costs 5,000 gas to alter a storage variable from non-zero to non-zero.
+
+
+## TESTING
+

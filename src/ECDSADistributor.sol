@@ -69,23 +69,22 @@ contract ECDSADistributor is EIP712, Pausable, AccessControl, Ownable2Step {
 // ------------------------------------
 
 // --- events
+
     event Claimed(address indexed user, uint128 indexed round, uint128 amount);
     event ClaimedMultiple(address indexed user, uint128[] indexed rounds, uint128 totalAmount);
-
-    event DeadlineUpdated(uint256 newDeadline);
-
     event SetupRounds(uint256 indexed numOfRounds, uint256 indexed totalAmount, uint256 indexed lastClaimTime);
     event AddedRounds(uint256 indexed numOfRounds, uint256 indexed totalAmount, uint256 indexed lastClaimTime);
-
+    event DeadlineUpdated(uint256 indexed newDeadline);
     event Frozen(uint256 indexed timestamp);
-
 
 // ------------------------------------
 
-    constructor(string memory _name, string memory _version, address token, address storedSigner, address owner) EIP712(_name, _version) Ownable(owner) {
+    constructor(string memory _name, string memory _version, address token, address storedSigner, address owner, address operator_) EIP712(_name, _version) Ownable(owner) {
         
         TOKEN = IERC20(token);
         STORED_SIGNER = storedSigner;
+
+        operator = operator_;
     }   
 
     /*//////////////////////////////////////////////////////////////
