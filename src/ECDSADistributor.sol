@@ -7,12 +7,10 @@ import "openzeppelin-contracts/contracts/utils/cryptography/EIP712.sol";
 import {SafeERC20, IERC20} from "./../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable2Step, Ownable} from "openzeppelin-contracts/contracts/access/Ownable2Step.sol";
 import {Pausable} from "openzeppelin-contracts/contracts/utils/Pausable.sol";
-import {AccessControl} from "openzeppelin-contracts/contracts/access/AccessControl.sol";
-
 
 //import {ReentrancyGuard} from "@looksrare/contracts-libs/contracts/ReentrancyGuard.sol";
 
-contract ECDSADistributor is EIP712, Pausable, AccessControl, Ownable2Step {
+contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
     using SafeERC20 for IERC20;
 
     IERC20 internal immutable TOKEN;
@@ -72,14 +70,15 @@ contract ECDSADistributor is EIP712, Pausable, AccessControl, Ownable2Step {
 
     event Claimed(address indexed user, uint128 indexed round, uint128 amount);
     event ClaimedMultiple(address indexed user, uint128[] indexed rounds, uint128 totalAmount);
-    event SetupRounds(uint256 indexed numOfRounds, uint256 indexed totalAmount, uint256 indexed lastClaimTime);
+    event SetupRounds(uint256 indexed numOfRounds, uint256 indexed firstClaimTime, uint256 indexed lastClaimTime, uint256 totalAmount);
     event AddedRounds(uint256 indexed numOfRounds, uint256 indexed totalAmount, uint256 indexed lastClaimTime);
     event DeadlineUpdated(uint256 indexed newDeadline);
+    event Deposited(uint256 indexed totalAmount);
     event Frozen(uint256 indexed timestamp);
 
 // ------------------------------------
 
-    constructor(string memory _name, string memory _version, address token, address storedSigner, address owner, address operator_) EIP712(_name, _version) Ownable(owner) {
+    constructor(string memory name, string memory version, address token, address storedSigner, address owner, address operator_) EIP712(name, version) Ownable(owner) {
         
         TOKEN = IERC20(token);
         STORED_SIGNER = storedSigner;
@@ -142,7 +141,7 @@ contract ECDSADistributor is EIP712, Pausable, AccessControl, Ownable2Step {
         uint256 amountsLength = amounts.length;
         uint256 signaturesLength = signatures.length;
 
-        if(roundsLength == amountsLength && roundsLength == signaturesLength) revert IncorrectLengths(); 
+        if(roundsLength != amountsLength && roundsLength != signaturesLength) revert IncorrectLengths(); 
         if(roundsLength == 0) revert EmptyArray(); 
 
         uint128 totalAmount;
@@ -163,7 +162,7 @@ contract ECDSADistributor is EIP712, Pausable, AccessControl, Ownable2Step {
 
             // sanity checks: round financed, started, not fully claimed
             if (roundData.deposited == 0) revert RoundNotFinanced();
-            if (roundData.startTime < block.timestamp) revert RoundNotStarted();
+            if (roundData.startTime > block.timestamp) revert RoundNotStarted();
             if (roundData.deposited == roundData.claimed) revert RoundFullyClaimed(); 
 
             // sig.verification
@@ -176,8 +175,10 @@ contract ECDSADistributor is EIP712, Pausable, AccessControl, Ownable2Step {
             // update storage: signature + roundData
             hasClaimed[msg.sender][round] = 1;
             allRounds[round] = roundData;
+        
         }
         
+        // update storage: claimed
         totalClaimed += totalAmount;
 
         emit ClaimedMultiple(msg.sender, rounds, totalAmount);
@@ -201,7 +202,7 @@ contract ECDSADistributor is EIP712, Pausable, AccessControl, Ownable2Step {
         
         // can update distribution up till 1 day before old start time
         if(firstClaimTime > 0){
-            require(block.timestamp < firstClaimTime - 1 days, "Too late");
+            require(block.timestamp < firstClaimTime - 1 days, "Setup: cannot update");
         }
 
         // input validation
@@ -232,14 +233,21 @@ contract ECDSADistributor is EIP712, Pausable, AccessControl, Ownable2Step {
 
         // update storage
         numberOfRounds = startTimesLength;
+        firstClaimTime = startTimes[0];
         lastClaimTime = startTimes[startTimesLength-1];
 
-        emit SetupRounds(startTimesLength, totalAmount, startTimes[startTimesLength-1]);
+        emit SetupRounds(startTimesLength, startTimes[0], startTimes[startTimesLength-1], totalAmount);
     }
 
+/*
     // only adds extra rounds. must be financed separately
     function addRounds(uint128[] calldata startTimes, uint128[] calldata allocations) external onlyOwner {
-        require(block.timestamp < deadline, "Deadline exceeded");
+        // check that deadline as not been exceeded; if deadline has been defined
+        if(deadline > 0) {
+            if (block.timestamp >= deadline) {
+                revert DeadlineExceeded();
+            }
+        }
 
         // input validation
         uint256 startTimesLength = startTimes.length;
@@ -253,17 +261,19 @@ contract ECDSADistributor is EIP712, Pausable, AccessControl, Ownable2Step {
         uint256 numOfRounds = numberOfRounds;
         uint256 prevStartTime = lastClaimTime;
         
-        for(uint256 i = numOfRounds; i < (numOfRounds + startTimesLength); ++i) {         
+        for(uint256 i = 0; i < startTimesLength; ++i) {         
 
             uint128 startTime = startTimes[i];
             uint128 allocation = allocations[i];
 
             require(startTime > prevStartTime, "Incorrect startTime");
+            require(startTime < deadline, "Cannot exceed deadline");        //note: is this really needed? users cannot claim anw
             prevStartTime = startTime;
 
             // update storage: mapping            
             RoundData memory roundData = RoundData({startTime: startTime, allocation: allocation, deposited:0, claimed:0});
-            allRounds[i] = roundData;
+            // add-on from last round tt was setup 
+            allRounds[i + numOfRounds] = roundData;
             
             // increment
             totalAmount += allocation;
@@ -275,7 +285,7 @@ contract ECDSADistributor is EIP712, Pausable, AccessControl, Ownable2Step {
 
         emit AddedRounds(startTimesLength, totalAmount, startTimes[startTimesLength-1]);
     }
-
+*/
     //note: deadline must be after last claim round
     function updateDeadline(uint256 newDeadline) external onlyOwner {
         //if (newDeadline < block.timestamp) revert InvalidNewDeadline(); --- not needed cos of subsequent check
@@ -307,22 +317,34 @@ contract ECDSADistributor is EIP712, Pausable, AccessControl, Ownable2Step {
             
             // get round no. & round data
             uint256 round = rounds[i];
-          
             RoundData storage roundData = allRounds[round];
-            roundData.deposited = roundData.allocation;
 
+            // check that round was not previously financed
+            if (roundData.deposited == roundData.allocation) revert ("Already financed");
+
+            // update deposit and increment
+            roundData.deposited = roundData.allocation;
             totalAmount += roundData.allocation;
         }
 
         // update storage
         totalDeposited += totalAmount;
-        
+
+        emit Deposited(totalAmount);
+
         TOKEN.safeTransferFrom(msg.sender, address(this), totalAmount);
     }
 
     function withdraw() external {
         require(msg.sender == operator, "Incorrect caller");
-        require(block.timestamp > deadline, "Premature withdraw");
+        
+        // if deadline is defined
+        if(deadline > 0){
+            require(block.timestamp > deadline, "Premature withdraw");
+        }
+
+        // if deadline is not defined; cannot withdraw
+        if(deadline == 0) revert ("Withdraw disabled");
 
         uint256 available = totalDeposited - totalClaimed;
 
@@ -381,6 +403,18 @@ contract ECDSADistributor is EIP712, Pausable, AccessControl, Ownable2Step {
         TOKEN.safeTransfer(receiver, balance);
     }
 
+    /*//////////////////////////////////////////////////////////////
+                                HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    function hashTypedDataV4(bytes32 structHash) external view returns (bytes32) {
+        return _hashTypedDataV4(structHash);
+    }
+
+    // may not need this. check eip712    
+    function domainSeparatorV4() external view returns (bytes32) {
+        return _domainSeparatorV4();
+    }
 }
 
 
