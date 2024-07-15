@@ -7,6 +7,7 @@ import "../src/ECDSADistributor.sol";
 import {ERC20Mock} from "openzeppelin-contracts/contracts/mocks/token/ERC20Mock.sol";
 import "openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
 import "openzeppelin-contracts/contracts/utils/cryptography/EIP712.sol";
+import {Pausable} from "openzeppelin-contracts/contracts/utils/Pausable.sol";
 
 abstract contract StateDeploy is Test {    
 
@@ -33,9 +34,6 @@ abstract contract StateDeploy is Test {
     uint128 totalAmountForAllRounds;
     uint128 totalAmountForRoundOne;
     uint128 totalAmountForRoundTwo;
-    uint128 totalAmountForRoundThree;
-
-    uint256 public deadline;
 
     // signatures
     bytes public userARound1;
@@ -52,9 +50,12 @@ abstract contract StateDeploy is Test {
     event ClaimedMultiple(address indexed user, uint128[] indexed rounds, uint128 totalAmount);
     event SetupRounds(uint256 indexed numOfRounds, uint256 indexed firstClaimTime, uint256 indexed lastClaimTime, uint256 totalAmount);
     event AddedRounds(uint256 indexed numOfRounds, uint256 indexed totalAmount, uint256 indexed lastClaimTime);
-    event DeadlineUpdated(uint256 newDeadline);
-    event Deposited(uint256 indexed totalAmount);
+    event DeadlineUpdated(uint256 indexed newDeadline);
+    event Deposited(address indexed operator, uint256 indexed amount);
+    event Withdrawn(address indexed operator, uint256 indexed amount);
+    event OperatorUpdated(address indexed oldOperator, address indexed newOperator);
     event Frozen(uint256 indexed timestamp);
+    event EmergencyExit(address indexed receiver, uint256 indexed balance);
 
 // ------------------------------------
     function setUp() public virtual {
@@ -73,13 +74,11 @@ abstract contract StateDeploy is Test {
         userATokens = 20 ether;
         userBTokens = 50 ether;
         userCTokens = 80 ether;
-        operatorTokens = (userATokens + userBTokens + userCTokens) * 3;
+        operatorTokens = (userATokens + userBTokens + userCTokens);
         
         // rounds
         totalAmountForAllRounds = operatorTokens;
-        totalAmountForRoundOne = totalAmountForRoundTwo = totalAmountForRoundThree = totalAmountForAllRounds/3;
-
-        deadline = 10;
+        totalAmountForRoundOne = totalAmountForRoundTwo = totalAmountForAllRounds/2;
 
         // contracts
         vm.startPrank(owner);
@@ -174,8 +173,8 @@ contract StateDeployTest is StateDeploy {
 
         // check mapping: 2nd round
         (uint128 startTime_2, uint128 allocation_2, uint128 deposited_2, uint128 claimed_2) = distributor.allRounds(1);
-        assertEq(startTime_2, startTimes[0]);
-        assertEq(allocation_2, allocations[0]);
+        assertEq(startTime_2, startTimes[1]);
+        assertEq(allocation_2, allocations[1]);
         assertEq(deposited_2, 0);
         assertEq(claimed_2, 0);
     }
@@ -250,8 +249,8 @@ contract StateSetupTest is StateSetup {
         uint256 totalAmount = totalAmountForRoundOne + totalAmountForRoundTwo;
 
         // check events
-        vm.expectEmit(true, true, true, false);
-        emit Deposited(totalAmount);
+        vm.expectEmit(true, true, false, false);
+        emit Deposited(operator, totalAmount);
 
         vm.prank(operator);
         distributor.deposit(rounds);
@@ -355,6 +354,7 @@ contract StateDepositedTest is StateDeposited {
 }
 
 abstract contract StateRoundOne is StateDeposited {
+
     function setUp() public override virtual {
         super.setUp();
 
@@ -498,6 +498,7 @@ abstract contract StateBothRoundsClaimed is StateRoundTwo {
     }
 }
 
+//  t = 33 days
 contract StateBothRoundsClaimedTest is StateBothRoundsClaimed {
 
     function testClaimForRoundOneAndTwo_UserA_UserB() public {
@@ -530,59 +531,272 @@ contract StateBothRoundsClaimedTest is StateBothRoundsClaimed {
         assertEq(distributor.hasClaimed(userB, 1), 1);
 
     }
+    
+    function testCannotWithdraw_SinceNoDeadline() public {
 
-    function testAddRounds() public {
+        vm.expectRevert("Withdraw disabled");
 
-        // old data
-        uint256 oldNumOfRounds = distributor.numberOfRounds();
-        uint256 oldLastClaimTime = distributor.lastClaimTime();
-
-        uint128[] memory startTimes = new uint128[](1);
-            startTimes[0] = (30 days + 4 days);
-
-        uint128[] memory allocations = new uint128[](1);
-            allocations[0] = totalAmountForRoundThree;
-
-        // check events
-        vm.expectEmit(true, true, true, false);
-        emit AddedRounds(startTimes.length, totalAmountForRoundThree, startTimes[0]);
-
-        vm.prank(owner);
-        distributor.addRounds(startTimes, allocations);
-
-        // check allRounds mapping: 3rd round
-        (uint128 startTime_3, uint128 allocation_3, uint128 deposited_3, uint128 claimed_3) = distributor.allRounds(2);
-        assertEq(startTime_3, startTimes[0]);
-        assertEq(allocation_3, totalAmountForRoundThree);
-        assertEq(deposited_3, 0);
-        assertEq(claimed_3, 0);
-
-        // check global vars
-        assertEq(distributor.numberOfRounds(), oldNumOfRounds + startTimes.length);
-        assertEq(distributor.lastClaimTime(), startTimes[0]);
-    }
-}
-
-abstract contract StateAddRounds is StateBothRoundsClaimed {
-    function setUp() public override virtual {
-        super.setUp();
-    }
-}
-
-contract StateAddRoundsTest is StateAddRounds {
-
-}
-
-
-/**
-
-after daeling is defined
-    function testCannotWithdrawPrematurely() public {
-
-        vm.expectRevert("Premature withdraw"); 
-
-        vm.prank(operator);
+        vm.prank(operator);   
         distributor.withdraw();
     }
 
- */
+    function testCannotUpdateDeadlineUnderBuffer() public {
+        assertEq(distributor.deadline(), 0);
+   
+        uint256 lastClaimTime = distributor.lastClaimTime();
+        
+        vm.expectRevert("Invalid deadline");
+
+        vm.prank(owner);
+        distributor.updateDeadline(lastClaimTime + 14 days);
+    }
+
+    function testOwnerUpdateDeadline() public {  
+        assertEq(distributor.deadline(), 0);
+ 
+        uint256 lastClaimTime = distributor.lastClaimTime();
+        uint256 deadline = lastClaimTime + 15 days;
+
+        // check events
+        vm.expectEmit(true, false, false, false);
+        emit DeadlineUpdated(deadline);
+
+        vm.prank(owner);
+        distributor.updateDeadline(deadline);
+
+        assertEq(distributor.deadline(), deadline);
+    }
+
+}
+
+//  t = 33 days
+abstract contract StateUpdateDeadline is StateBothRoundsClaimed {
+    
+    uint256 public deadline;
+
+    function setUp() public override virtual {
+        super.setUp();
+
+        uint256 lastClaimTime = distributor.lastClaimTime();
+        deadline = lastClaimTime + 15 days;
+
+        vm.prank(owner);
+        distributor.updateDeadline(deadline);
+    }
+}
+
+contract StateUpdateDeadlineTest is StateUpdateDeadline {
+
+    function testCannotClaimAfterDeadline() public {
+        
+        vm.warp(deadline);
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.DeadlineExceeded.selector));
+
+        vm.prank(userA);        
+        distributor.claim(0, userATokens/2, userARound1);
+
+        // --------------------------------------------------
+
+        vm.warp(deadline + 1 days);
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.DeadlineExceeded.selector));
+    
+        vm.prank(userC);        
+        distributor.claim(0, userCTokens/2, userCRound1);
+    }
+
+    function testCanClaimBeforeDeadline() public {
+
+        vm.warp(deadline - 1);
+        
+        vm.prank(userC);        
+        distributor.claim(0, userCTokens/2, userCRound1);
+
+        // check tokens transfers
+        assertEq(token.balanceOf(userC), userCTokens/2);
+        assertEq(distributor.totalClaimed(), userATokens + userBTokens + userCTokens/2);
+        assertEq(token.balanceOf(address(distributor)), userCTokens/2);
+
+        // check allRounds mapping: first round
+        (uint128 startTime_1, uint128 allocation_1, uint128 deposited_1, uint128 claimed_1) = distributor.allRounds(0);
+        assertEq(allocation_1, totalAmountForRoundOne);
+        assertEq(deposited_1, totalAmountForRoundOne);
+        assertEq(claimed_1, totalAmountForRoundOne);
+
+        (uint128 startTime_2, uint128 allocation_2, uint128 deposited_2, uint128 claimed_2) = distributor.allRounds(1);
+        assertEq(allocation_2, totalAmountForRoundTwo);
+        assertEq(deposited_2, totalAmountForRoundTwo);
+        assertEq(claimed_2, totalAmountForRoundTwo -  userCTokens/2);
+
+        // check hasClaimed mapping: first round
+        assertEq(distributor.hasClaimed(userC, 0), 1);
+        assertEq(distributor.hasClaimed(userC, 1), 0);
+
+    }
+
+    function testCanClaimMultipleBeforeDeadline() public {
+
+        vm.warp(deadline - 1);
+        
+        // userC params
+        uint128[] memory rounds = new uint128[](2);
+            rounds[0] = 0;
+            rounds[1] = 1;
+
+        uint128[] memory amounts = new uint128[](2);
+            amounts[0] = userCTokens/2;
+            amounts[1] = userCTokens/2;
+        
+        bytes[] memory signatures = new bytes[](2);
+            signatures[0] = userCRound1;
+            signatures[1] = userCRound2;
+
+        vm.prank(userC);        
+        distributor.claimMultiple(rounds, amounts, signatures);
+
+        // check tokens transfers
+        assertEq(token.balanceOf(userC), userCTokens);
+        assertEq(token.balanceOf(address(distributor)), 0);
+        assertEq(distributor.totalClaimed(),  userATokens + userBTokens + userCTokens);
+
+        // check allRounds mapping: first round
+        (uint128 startTime_1, uint128 allocation_1, uint128 deposited_1, uint128 claimed_1) = distributor.allRounds(0);
+        assertEq(allocation_1, totalAmountForRoundOne);
+        assertEq(deposited_1, totalAmountForRoundOne);
+        assertEq(claimed_1, (userATokens + userBTokens + userCTokens)/2);
+
+        // check allRounds mapping: 2nd round
+        (uint128 startTime_2, uint128 allocation_2, uint128 deposited_2, uint128 claimed_2) = distributor.allRounds(1);
+        assertEq(allocation_2, totalAmountForRoundTwo);
+        assertEq(deposited_2, totalAmountForRoundTwo);
+        assertEq(claimed_2, (userATokens + userBTokens + userCTokens)/2);
+
+        // check hasClaimed mapping: first & second round 
+        assertEq(distributor.hasClaimed(userC, 0), 1);
+        assertEq(distributor.hasClaimed(userC, 1), 1);
+
+
+    }
+
+    function testCannotWithdraw_BeforeDeadline() public {
+        vm.warp(deadline - 1);
+
+        vm.expectRevert("Premature withdraw");
+
+        vm.prank(operator);   
+        distributor.withdraw();
+    }
+
+    function testCanWithdraw_AfterDeadline() public {
+        vm.warp(deadline + 1);
+
+        uint256 unclaimed = distributor.totalDeposited() - distributor.totalClaimed();
+
+        // check events
+        vm.expectEmit(true, true, true, false);
+        emit Withdrawn(distributor.operator(), unclaimed);
+        
+        vm.prank(operator);   
+        distributor.withdraw();
+
+        // user A and B have fully claimed. but not C
+        uint256 remainder = (totalAmountForAllRounds - userATokens - userBTokens);
+
+        // check tokens transfers
+        assertEq(token.balanceOf(address(distributor)), 0);
+        assertEq(token.balanceOf(operator), remainder);
+        assertEq(token.balanceOf(operator), userCTokens);
+    }
+
+}
+
+
+abstract contract StatePaused is StateUpdateDeadline {
+
+    function setUp() public override virtual {
+        super.setUp();
+
+        vm.prank(owner);
+        distributor.pause();
+    }    
+}
+
+contract StatePausedTest is StatePaused {
+
+    function testCannotClaimWhenPaused() public {
+        
+        vm.warp(deadline - 1);
+        
+        vm.expectRevert(abi.encodeWithSelector(Pausable.EnforcedPause.selector));
+
+        vm.prank(userC);        
+        distributor.claim(0, userCTokens/2, userCRound1);      
+    }
+
+    function testCannotClaimMultipleWhenPaused() public {
+        
+        vm.warp(deadline - 1);
+        
+        vm.expectRevert(abi.encodeWithSelector(Pausable.EnforcedPause.selector));
+
+        // userC params
+        uint128[] memory rounds = new uint128[](2);
+            rounds[0] = 0;
+            rounds[1] = 1;
+
+        uint128[] memory amounts = new uint128[](2);
+            amounts[0] = userCTokens/2;
+            amounts[1] = userCTokens/2;
+        
+        bytes[] memory signatures = new bytes[](2);
+            signatures[0] = userCRound1;
+            signatures[1] = userCRound2;
+
+        vm.prank(userC);        
+        distributor.claimMultiple(rounds, amounts, signatures);    
+    }
+
+    function testFreezeContract() public {
+
+        assertEq(distributor.isFrozen(), 0);
+
+        // check events
+        vm.expectEmit(true, false, false, false);
+        emit Frozen(block.timestamp);
+        
+
+        vm.prank(owner);
+        distributor.freeze();
+
+        assertEq(distributor.isFrozen(), 1);
+    }
+}
+
+abstract contract StateFrozen is StatePaused {
+
+    function setUp() public override virtual {
+        super.setUp();
+        
+        vm.prank(owner);
+        distributor.freeze();
+    }    
+}
+
+contract StateFrozenTest is StateFrozen {
+
+    function testEmergencyExit() public {
+        
+        uint256 balance = token.balanceOf(address(distributor));
+
+        // check events
+        vm.expectEmit(true, false, false, false);
+        emit EmergencyExit(owner, balance);
+
+        vm.prank(owner);
+        distributor.emergencyExit(owner);
+
+        assertEq(token.balanceOf(owner), balance);
+    }
+}
+

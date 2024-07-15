@@ -20,8 +20,8 @@ T0: deploy
 T1: setup: 2 rounds. deadline = 10
 T2: round 1 
 T3: round 2
-T4: addRounds: 1 round
-T5: round 3 
+T4: 
+T5: 
 T6: 
 
 user A and B claim
@@ -30,11 +30,16 @@ user C does not
 
 - claim
 - setupRounds
-- addRounds
--
+- deadline
+- claim before, cannot after
+- udpate deadline
+- claim before, cannot after
 
 
 t30: deploy
-t21: setup
+t21: setup | lastClaimtime = 33 
 t32: round 1
-t33: round 2
+t33: round 2 
+t33: claim both rounds for A and B
+t33: deadline
+

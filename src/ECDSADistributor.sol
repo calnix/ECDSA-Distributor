@@ -28,8 +28,8 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
     uint256 public totalDeposited;
     uint256 public totalClaimed;
 
-    // emergency state
-    bool public isFrozen;
+    // emergency state: 1 is Frozed. 0 is not.
+    uint256 public isFrozen;
 
     struct Claim {
         address user;
@@ -73,8 +73,12 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
     event SetupRounds(uint256 indexed numOfRounds, uint256 indexed firstClaimTime, uint256 indexed lastClaimTime, uint256 totalAmount);
     event AddedRounds(uint256 indexed numOfRounds, uint256 indexed totalAmount, uint256 indexed lastClaimTime);
     event DeadlineUpdated(uint256 indexed newDeadline);
-    event Deposited(uint256 indexed totalAmount);
+    event Deposited(address indexed operator, uint256 indexed amount);
+    event Withdrawn(address indexed operator, uint256 indexed amount);
+    event OperatorUpdated(address indexed oldOperator, address indexed newOperator);
+
     event Frozen(uint256 indexed timestamp);
+    event EmergencyExit(address indexed receiver, uint256 indexed balance);
 
 // ------------------------------------
 
@@ -107,12 +111,12 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
 
         RoundData memory roundData = allRounds[round];
         
-        // check if round is legitimate
+        // check if round is legitimate  ---note: consider removing; excessive check
         //if (roundData.allocation == 0) revert InvalidRound();
 
         // sanity checks: round financed, started, not fully claimed
         if (roundData.deposited == 0) revert RoundNotFinanced();
-        if (roundData.startTime < block.timestamp) revert RoundNotStarted();
+        if (roundData.startTime > block.timestamp) revert RoundNotStarted();
         if (roundData.deposited == roundData.claimed) revert RoundFullyClaimed(); 
 
         // update round data: increment claimedTokens
@@ -239,65 +243,26 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
         emit SetupRounds(startTimesLength, startTimes[0], startTimes[startTimesLength-1], totalAmount);
     }
 
-/*
-    // only adds extra rounds. must be financed separately
-    function addRounds(uint128[] calldata startTimes, uint128[] calldata allocations) external onlyOwner {
-        // check that deadline as not been exceeded; if deadline has been defined
-        if(deadline > 0) {
-            if (block.timestamp >= deadline) {
-                revert DeadlineExceeded();
-            }
-        }
 
-        // input validation
-        uint256 startTimesLength = startTimes.length;
-        uint256 allocationsLength = allocations.length;
-
-        require(startTimesLength > 0, "Empty Array");
-        require(startTimesLength == allocationsLength, "Incorrect Lengths");
-
-        // add additional rounds
-        uint256 totalAmount;
-        uint256 numOfRounds = numberOfRounds;
-        uint256 prevStartTime = lastClaimTime;
-        
-        for(uint256 i = 0; i < startTimesLength; ++i) {         
-
-            uint128 startTime = startTimes[i];
-            uint128 allocation = allocations[i];
-
-            require(startTime > prevStartTime, "Incorrect startTime");
-            require(startTime < deadline, "Cannot exceed deadline");        //note: is this really needed? users cannot claim anw
-            prevStartTime = startTime;
-
-            // update storage: mapping            
-            RoundData memory roundData = RoundData({startTime: startTime, allocation: allocation, deposited:0, claimed:0});
-            // add-on from last round tt was setup 
-            allRounds[i + numOfRounds] = roundData;
-            
-            // increment
-            totalAmount += allocation;
-        }
-
-        // update storage
-        numberOfRounds = numOfRounds + startTimesLength;
-        lastClaimTime = startTimes[startTimesLength-1];
-
-        emit AddedRounds(startTimesLength, totalAmount, startTimes[startTimesLength-1]);
-    }
-*/
     //note: deadline must be after last claim round
     function updateDeadline(uint256 newDeadline) external onlyOwner {
         //if (newDeadline < block.timestamp) revert InvalidNewDeadline(); --- not needed cos of subsequent check
 
-        // allow for 2 week buffer. prevent malicious premature ending
-        uint256 buffer = 14 days;
-        if (newDeadline < lastClaimTime + buffer) revert InvalidNewDeadline();
+        // allow for 14 days buffer: prevent malicious premature ending
+        require(newDeadline > lastClaimTime + 14 days, "Invalid deadline"); 
 
         deadline = newDeadline;
         emit DeadlineUpdated(newDeadline);
     }
 
+    function updateOperator(address newOperator) external onlyOwner {
+        address oldOperator = operator;
+
+        operator = newOperator;
+
+        emit OperatorUpdated(oldOperator, newOperator);
+
+    }
 
     /*//////////////////////////////////////////////////////////////
                                 OPERATOR
@@ -330,23 +295,27 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
         // update storage
         totalDeposited += totalAmount;
 
-        emit Deposited(totalAmount);
+        emit Deposited(msg.sender, totalAmount);
 
         TOKEN.safeTransferFrom(msg.sender, address(this), totalAmount);
     }
 
     function withdraw() external {
         require(msg.sender == operator, "Incorrect caller");
+
+        // if deadline is not defined; cannot withdraw
+        if(deadline == 0) {
+            revert ("Withdraw disabled");
+        }
         
         // if deadline is defined
-        if(deadline > 0){
+        else {      
             require(block.timestamp > deadline, "Premature withdraw");
         }
 
-        // if deadline is not defined; cannot withdraw
-        if(deadline == 0) revert ("Withdraw disabled");
-
         uint256 available = totalDeposited - totalClaimed;
+
+        emit Withdrawn(msg.sender, available);
 
         TOKEN.safeTransfer(msg.sender, available);
     }
@@ -381,9 +350,9 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
             Enables emergencyExit() to be called.
      */
     function freeze() external whenPaused onlyOwner {
-        require(isFrozen == false, "Pool is frozen");
+        require(isFrozen == 0, "Frozen");
         
-        isFrozen = true;
+        isFrozen = 1;
 
         emit Frozen(block.timestamp);
     }  
@@ -396,9 +365,11 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
      * @param receiver Address of beneficiary of transfer
      */
     function emergencyExit(address receiver) external whenPaused onlyOwner {
-        require(isFrozen, "Not frozen");
+        require(isFrozen == 1, "Not frozen");
 
         uint256 balance = TOKEN.balanceOf(address(this));
+
+        emit EmergencyExit(receiver, balance);
 
         TOKEN.safeTransfer(receiver, balance);
     }
