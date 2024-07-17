@@ -21,15 +21,14 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
     // distribution
     uint256 public deadline;                // optional: Users can claim until this timestamp
     uint256 public numberOfRounds;         // num. of rounds
-    uint256 public firstClaimTime;        // startTime of first round   
-    uint256 public lastClaimTime;        // startTime of last round
 
     // balances
-    uint256 public totalDeposited;
     uint256 public totalClaimed;
+    uint256 public totalDeposited;
 
     // emergency state: 1 is Frozed. 0 is not.
     uint256 public isFrozen;
+    uint256 public setupComplete;
 
     struct Claim {
         address user;
@@ -119,10 +118,12 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
         // sanity checks: round financed, started, not fully claimed
         if (roundData.deposited == 0) revert RoundNotFinanced();
         if (roundData.startTime > block.timestamp) revert RoundNotStarted();
-        if (roundData.deposited == roundData.claimed) revert RoundFullyClaimed(); 
 
         // update round data: increment claimedTokens
         roundData.claimed += amount;
+
+        // sanity check
+        if (roundData.deposited < roundData.claimed) revert RoundFullyClaimed(); 
 
         // update storage
         hasClaimed[msg.sender][round] = 1;
@@ -204,11 +205,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
     // note: calldata on L2 
     // deadline is optional
     function setupRounds(uint128[] calldata startTimes, uint128[] calldata allocations) external onlyOwner {
-        
-        // can update distribution up till 1 day before old start time
-        if(firstClaimTime > 0){
-            require(block.timestamp < firstClaimTime - 1 days, "Setup: cannot update");
-        }
+        require(setupComplete == 0, "Already setup");
 
         // input validation
         uint256 startTimesLength = startTimes.length;
@@ -225,8 +222,12 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
             uint128 startTime = startTimes[i];
             uint128 allocation = allocations[i];
             
+            // startTime check
             require(startTime > prevStartTime, "Incorrect startTime");
             prevStartTime = startTime;
+
+            // allocation check
+            require(allocation > 0, "Incorrect Allocation");
 
             // update storage 
             allRounds[i] = RoundData({startTime: startTime, allocation: allocation, deposited:0, claimed:0});
@@ -237,8 +238,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
 
         // update storage
         numberOfRounds = startTimesLength;
-        firstClaimTime = startTimes[0];
-        lastClaimTime = startTimes[startTimesLength-1];
+        setupComplete = 1;
 
         emit SetupRounds(startTimesLength, startTimes[0], startTimes[startTimesLength-1], totalAmount);
     }
@@ -249,7 +249,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
         //if (newDeadline < block.timestamp) revert InvalidNewDeadline(); --- not needed cos of subsequent check
 
         // allow for 14 days buffer: prevent malicious premature ending
-        require(newDeadline > lastClaimTime + 14 days, "Invalid deadline"); 
+        require(newDeadline > allRounds[allRounds.length - 1].startTime + 14 days, "Invalid deadline"); 
 
         deadline = newDeadline;
         emit DeadlineUpdated(newDeadline);
@@ -391,11 +391,14 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
         return _hashTypedDataV4(structHash);
     }
 
-    // may not need this. check eip712    
+    // note: may not need this. check eip712    
     function domainSeparatorV4() external view returns (bytes32) {
         return _domainSeparatorV4();
     }
 }
+
+
+
 
 
 /**
