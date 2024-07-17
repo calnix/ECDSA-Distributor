@@ -52,7 +52,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
     error DeadlineExceeded();
     error UserHasClaimed();
     error InvalidRound();
-    error FeeCheckFailed();
+    error TaxTokenCheckFailed();
     
     error RoundNotSetup();
     error RoundNotStarted();
@@ -131,12 +131,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
 
         emit Claimed(msg.sender, round, amount);
 
-        // token fee check: remainder calc
-        uint256 expectedBalance = totalDeposited - totalClaimed;
-
-        TOKEN.safeTransfer(msg.sender, amount);
-        
-        if (TOKEN.balanceOf(address(this) != expectedBalance)) revert FeeCheckFailed(); 
+        TOKEN.safeTransfer(msg.sender, amount);        
     }
 
     function claimMultiple(uint128[] calldata rounds, uint128[] calldata amounts, bytes[] calldata signatures) external whenNotPaused {
@@ -194,12 +189,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
 
         emit ClaimedMultiple(msg.sender, rounds, totalAmount);
 
-        // token fee check: remainder calc
-        uint256 expectedBalance = totalDeposited - totalClaimed;
-
         TOKEN.safeTransfer(msg.sender, totalAmount);
-
-        if (TOKEN.balanceOf(address(this) != expectedBalance)) revert FeeCheckFailed(); 
     }
 
     function _claim(uint128 round, uint128 amount, bytes memory signature) internal view {
@@ -295,7 +285,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
             RoundData storage roundData = allRounds[round];
 
             // check that round has been setup
-            if (roundData.allocation != 0) revert RoundNotSetup();
+            if (roundData.allocation == 0) revert RoundNotSetup();
 
             // check that round was not previously financed
             if (roundData.deposited == roundData.allocation) revert RoundAlreadyFinanced();
@@ -310,7 +300,13 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
 
         emit Deposited(msg.sender, totalAmount);
 
+        // tax token check
+        uint256 before = TOKEN.balanceOf(address(this));
+
         TOKEN.safeTransferFrom(msg.sender, address(this), totalAmount);
+        
+        // tax token check
+        if (TOKEN.balanceOf(address(this) - before != totalAmount)) revert TaxTokenCheckFailed(); 
     }
 
     function withdraw() external {
