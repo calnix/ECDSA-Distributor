@@ -52,13 +52,15 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
     error DeadlineExceeded();
     error UserHasClaimed();
     error InvalidRound();
+    error FeeCheckFailed();
     
+    error RoundNotSetup();
     error RoundNotStarted();
     error RoundNotFinanced();
     error RoundFullyClaimed();
-    
+    error RoundAlreadyFinanced();
+
     error InvalidSignature();
-    error ECDSAZeroAddress();
 
     error EmptyArray();
     error IncorrectLengths();
@@ -129,7 +131,12 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
 
         emit Claimed(msg.sender, round, amount);
 
+        // token fee check: remainder calc
+        uint256 expectedBalance = totalDeposited - totalClaimed;
+
         TOKEN.safeTransfer(msg.sender, amount);
+        
+        if (TOKEN.balanceOf(address(this) != expectedBalance)) revert FeeCheckFailed(); 
     }
 
     function claimMultiple(uint128[] calldata rounds, uint128[] calldata amounts, bytes[] calldata signatures) external whenNotPaused {
@@ -187,7 +194,12 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
 
         emit ClaimedMultiple(msg.sender, rounds, totalAmount);
 
+        // token fee check: remainder calc
+        uint256 expectedBalance = totalDeposited - totalClaimed;
+
         TOKEN.safeTransfer(msg.sender, totalAmount);
+
+        if (TOKEN.balanceOf(address(this) != expectedBalance)) revert FeeCheckFailed(); 
     }
 
     function _claim(uint128 round, uint128 amount, bytes memory signature) internal view {
@@ -196,7 +208,6 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
 
         address signer = ECDSA.recover(digest, signature);
             if(signer != STORED_SIGNER) revert InvalidSignature(); 
-            if(signer == address(0)) revert ECDSAZeroAddress(); // note: is this needed given the earlier
     }
 
     // note: only callable once?
@@ -228,8 +239,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
             prevStartTime = startTime;
 
             // update storage 
-            RoundData memory roundData = RoundData({startTime: startTime, allocation: allocation, deposited:0, claimed:0});
-            allRounds[i] = roundData;
+            allRounds[i] = RoundData({startTime: startTime, allocation: allocation, deposited:0, claimed:0});
             
             // increment
             totalAmount += allocation;
@@ -284,8 +294,11 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
             uint256 round = rounds[i];
             RoundData storage roundData = allRounds[round];
 
+            // check that round has been setup
+            if (roundData.allocation != 0) revert RoundNotSetup();
+
             // check that round was not previously financed
-            if (roundData.deposited == roundData.allocation) revert ("Already financed");
+            if (roundData.deposited == roundData.allocation) revert RoundAlreadyFinanced();
 
             // update deposit and increment
             roundData.deposited = roundData.allocation;
