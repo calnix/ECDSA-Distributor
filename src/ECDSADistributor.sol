@@ -123,7 +123,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
         roundData.claimed += amount;
 
         // sanity check
-        if (roundData.deposited < roundData.claimed) revert RoundFullyClaimed(); 
+        if (roundData.claimed > roundData.deposited) revert RoundFullyClaimed();    
 
         // update storage
         hasClaimed[msg.sender][round] = 1;
@@ -167,11 +167,10 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
             // check if round is legitimate
             //if (roundData.allocation == 0) revert InvalidRound();
 
-            // sanity checks: round financed, started, not fully claimed
+            // sanity checks: round financed, started
             if (roundData.deposited == 0) revert RoundNotFinanced();
             if (roundData.startTime > block.timestamp) revert RoundNotStarted();
-            if (roundData.deposited == roundData.claimed) revert RoundFullyClaimed(); 
-
+            
             // sig.verification
             _claim(round, amount, signature);
         
@@ -179,6 +178,9 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
             roundData.claimed += amount;
             totalAmount += amount;       
 
+            // sanity check
+            if (roundData.claimed > roundData.deposited) revert RoundFullyClaimed();    
+          
             // update storage: signature + roundData
             hasClaimed[msg.sender][round] = 1;
             allRounds[round] = roundData;
@@ -211,8 +213,8 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
         uint256 startTimesLength = startTimes.length;
         uint256 allocationsLength = allocations.length;
         
-        require(startTimesLength > 0, "Empty Array");
-        require(startTimesLength == allocationsLength, "Incorrect Lengths");
+        require(startTimesLength > 0, "Empty array");
+        require(startTimesLength == allocationsLength, "Incorrect lengths");
         
         // update rounds
         uint256 totalAmount;
@@ -227,7 +229,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
             prevStartTime = startTime;
 
             // allocation check
-            require(allocation > 0, "Incorrect Allocation");
+            require(allocation > 0, "Incorrect allocation");
 
             // update storage 
             allRounds[i] = RoundData({startTime: startTime, allocation: allocation, deposited:0, claimed:0});
