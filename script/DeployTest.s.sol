@@ -23,7 +23,7 @@ contract DeployTestnet is Script {
         string memory name = "test"; 
         string memory version = "v1";
         address token = address(mockToken);
-        address storedSigner = 0x8C9C001F821c04513616fd7962B2D8c62f925fD2;
+        address storedSigner = 0xDf56A8382aDAcC45e394a5632a22ef144D37E282;
         address owner = 0x8C9C001F821c04513616fd7962B2D8c62f925fD2;
         address operator_ = 0x8C9C001F821c04513616fd7962B2D8c62f925fD2;
 
@@ -34,4 +34,4 @@ contract DeployTestnet is Script {
         
 }
 
-// forge script script/Deploy.s.sol:DeployMainnet --rpc-url mainnet --broadcast --verify -vvvv --etherscan-api-key mainnet
+// forge script script/DeployTest.s.sol:DeployTestnet --rpc-url sepolia --broadcast --verify -vvvv --etherscan-api-key sepolia --legacy

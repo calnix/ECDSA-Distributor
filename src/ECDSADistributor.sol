@@ -21,6 +21,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
     // distribution
     uint256 public deadline;                // optional: Users can claim until this timestamp
     uint256 public numberOfRounds;         // num. of rounds
+    uint256 public lastClaimTime;         // startTime of last round
 
     // balances
     uint256 public totalClaimed;
@@ -240,7 +241,9 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
 
         // update storage
         numberOfRounds = startTimesLength;
+        lastClaimTime = startTimes[startTimesLength-1];
         setupComplete = 1;
+
 
         emit SetupRounds(startTimesLength, startTimes[0], startTimes[startTimesLength-1], totalAmount);
     }
@@ -251,7 +254,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
         //if (newDeadline < block.timestamp) revert InvalidNewDeadline(); --- not needed cos of subsequent check
 
         // allow for 14 days buffer: prevent malicious premature ending
-        require(newDeadline > allRounds[allRounds.length - 1].startTime + 14 days, "Invalid deadline"); 
+        if (newDeadline < lastClaimTime + 14 days) revert InvalidNewDeadline();
 
         deadline = newDeadline;
         emit DeadlineUpdated(newDeadline);
@@ -308,7 +311,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
         TOKEN.safeTransferFrom(msg.sender, address(this), totalAmount);
         
         // tax token check
-        if (TOKEN.balanceOf(address(this) - before != totalAmount)) revert TaxTokenCheckFailed(); 
+        if (TOKEN.balanceOf(address(this)) - before != totalAmount) revert TaxTokenCheckFailed(); 
     }
 
     function withdraw() external {
