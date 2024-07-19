@@ -214,7 +214,7 @@ contract StateSetupTest is StateSetup {
             allocations[0] = userATokens/2 + userBTokens/2 + userCTokens/2;
             allocations[1] = userATokens/2 + userBTokens/2 + userCTokens/2;
 
-        vm.expectRevert("Setup: cannot update");
+        vm.expectRevert("Already setup");
 
         vm.prank(owner);
         distributor.setupRounds(startTimes, allocations);
@@ -300,7 +300,7 @@ contract StateDepositedTest is StateDeposited {
         // for all rounds
         uint256 totalAmount = userATokens + userBTokens + userCTokens;
 
-        vm.expectRevert("Already financed");
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.RoundAlreadyFinanced.selector));
 
         vm.prank(operator);
         distributor.deposit(rounds);
@@ -545,10 +545,10 @@ contract StateBothRoundsClaimedTest is StateBothRoundsClaimed {
    
         uint256 lastClaimTime = distributor.lastClaimTime();
         
-        vm.expectRevert("Invalid deadline");
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.InvalidNewDeadline.selector));
 
         vm.prank(owner);
-        distributor.updateDeadline(lastClaimTime + 14 days);
+        distributor.updateDeadline(lastClaimTime + 13 days);
     }
 
     function testOwnerUpdateDeadline() public {  
