@@ -8,8 +8,6 @@ import {SafeERC20, IERC20} from "./../lib/openzeppelin-contracts/contracts/token
 import {Ownable2Step, Ownable} from "openzeppelin-contracts/contracts/access/Ownable2Step.sol";
 import {Pausable} from "openzeppelin-contracts/contracts/utils/Pausable.sol";
 
-//import {ReentrancyGuard} from "@looksrare/contracts-libs/contracts/ReentrancyGuard.sol";
-
 contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
     using SafeERC20 for IERC20;
 
@@ -120,9 +118,6 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
         _claim(round, amount, signature);
 
         RoundData memory roundData = allRounds[round];
-        
-        // check if round is legitimate  ---note: consider removing; excessive check
-        //if (roundData.allocation == 0) revert InvalidRound();
 
         // sanity checks: round financed, started, not fully claimed
         if (roundData.deposited == 0) revert RoundNotFinanced();
@@ -180,9 +175,6 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
             // replay attack protection: check that signature has already been used
             if (hasClaimed[msg.sender][round] == 1) revert UserHasClaimed();
 
-            // check if round is legitimate
-            //if (roundData.allocation == 0) revert InvalidRound();
-
             // sanity checks: round financed, started
             if (roundData.deposited == 0) revert RoundNotFinanced();
             if (roundData.startTime > block.timestamp) revert RoundNotStarted();
@@ -219,7 +211,6 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
             if(signer != STORED_SIGNER) revert InvalidSignature(); 
     }
 
-    // note: calldata on L2 
     /**
      * @notice Owner to create distribution schedule
      * @dev Only callable once
