@@ -14,7 +14,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
     using SafeERC20 for IERC20;
 
     IERC20 internal immutable TOKEN;
-    address internal immutable STORED_SIGNER; //note: if change, should redeploy.
+    address internal immutable STORED_SIGNER;
 
     address public operator;
     
@@ -44,6 +44,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
         uint128 claimed;
     }
 
+    // number of claiming rounds
     mapping(uint256 round => RoundData roundData) public allRounds;
     // 0: false, 1: true.
     mapping(address user => mapping(uint256 round => uint256 claimed)) public hasClaimed;
@@ -96,6 +97,13 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
                                  CLAIM
     //////////////////////////////////////////////////////////////*/
 
+    /**
+     * @notice User to claim allocated tokens for a specific round
+     * @dev Only callable when not paused
+     * @param round Claim round number (first round: 0)
+     * @param amount Tokens to be claimed for specified round
+     * @param signature Signature must be signed by the declared signer on the contract
+     */
     function claim(uint128 round, uint128 amount, bytes calldata signature) external whenNotPaused {
 
         // check that deadline as not been exceeded; if deadline has been defined
@@ -136,6 +144,13 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
         TOKEN.safeTransfer(msg.sender, amount);        
     }
 
+    /**
+     * @notice User to claim allocated tokens for multiple round
+     * @dev Only callable when not paused
+     * @param rounds Array of claim round numbers (first round: 0)
+     * @param amounts Array of tokens to be claimed for each round
+     * @param signatures Array of signatures must be signed by the declared signer on the contract
+     */
     function claimMultiple(uint128[] calldata rounds, uint128[] calldata amounts, bytes[] calldata signatures) external whenNotPaused {
 
         // check that deadline as not been exceeded; if deadline has been defined
@@ -204,9 +219,13 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
             if(signer != STORED_SIGNER) revert InvalidSignature(); 
     }
 
-    // note: only callable once?
     // note: calldata on L2 
-    // deadline is optional
+    /**
+     * @notice Owner to create distribution schedule
+     * @dev Only callable once
+     * @param startTimes Array of start times of each round
+     * @param allocations Array of token allocation per round
+     */
     function setupRounds(uint128[] calldata startTimes, uint128[] calldata allocations) external onlyOwner {
         require(setupComplete == 0, "Already setup");
 
@@ -249,9 +268,12 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
     }
 
 
-    //note: deadline must be after last claim round
+    /**
+     * @notice Owner to update deadline variable
+     * @dev By default deadline = 0 
+     * @param newDeadline must be after last claim round + 14 days
+     */
     function updateDeadline(uint256 newDeadline) external onlyOwner {
-        //if (newDeadline < block.timestamp) revert InvalidNewDeadline(); --- not needed cos of subsequent check
 
         // allow for 14 days buffer: prevent malicious premature ending
         if (newDeadline < lastClaimTime + 14 days) revert InvalidNewDeadline();
@@ -260,6 +282,11 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
         emit DeadlineUpdated(newDeadline);
     }
 
+    /**
+     * @notice Owner to update operator address
+     * @dev Operator role allows calling of deposit and withdraw fns
+     * @param newOperator new address
+     */
     function updateOperator(address newOperator) external onlyOwner {
         address oldOperator = operator;
 
@@ -273,7 +300,13 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
                                 OPERATOR
     //////////////////////////////////////////////////////////////*/
 
-    // project can fund all rounds at once or partially
+    
+    /**
+     * @notice Operator to deposit the total tokens required for specified rounds
+     * @dev Operator can fund all rounds at once or incrementally fund, 
+            so to avoid having to commit a large initial sum
+     * @param rounds Array of rounds which are being financed. First round index = 0.
+     */
     function deposit(uint256[] calldata rounds) external {
         require(msg.sender == operator, "Incorrect caller");
 
@@ -314,6 +347,10 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
         if (TOKEN.balanceOf(address(this)) - before != totalAmount) revert TaxTokenCheckFailed(); 
     }
 
+    /**
+     * @notice Operator to withdraw all unclaimed tokens past the specified deadline
+     * @dev Only possible if deadline has been defined and exceeded
+     */
     function withdraw() external {
         require(msg.sender == operator, "Incorrect caller");
 
@@ -347,9 +384,11 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
     }
 
     /**
-     * @notice Unpause claim
+     * @notice Unpause claim. Cannot unpause once frozen
      */
     function unpause() external onlyOwner whenPaused {
+        require(isFrozen == 0, "Frozen");
+
         _unpause();
     }
 
@@ -401,38 +440,3 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
         return _domainSeparatorV4();
     }
 }
-
-
-
-
-
-/**
-
-    Permit
-    - spender presents a signature requesting funds from John's wallet
-    - did John sign the signature? if he did, allow. 
-
-    John signs message off-chain, DApp transmits the signature via txn and handles the asset flow.
-    John pays no gas.
-
-    Similarly in Airdrop,
-
-    - claimer presents a signature: amount, address
-    - did 'we' contract signer, sign said msg?
-
-    Have a specific EOA sign to create all signatures.
-    Store addr of signer on contract
-    Recover signer from signature to verify against on-chain copy.
-
-    If attacker submits spoofed signature, incorrect signer will be returned. 
-    If the correct signature was supplied by the FE, the correct signer will be returned.
-
-*/
-
-/**
-    Attacks
-
-    1. replay attack on other chain/contract:
-        other chain - check mocaToken and hashTypedDataV4
-    2. 
- */
