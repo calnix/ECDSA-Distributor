@@ -48,6 +48,11 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
     mapping(address user => mapping(uint256 round => uint256 claimed)) public hasClaimed;
 
 // --- errors
+    error AlreadySetup();
+
+    error IncorrectStartTime();
+    error IncorrectAllocation();
+
     error DeadlineExceeded();
     error UserHasClaimed();
     error InvalidRound();
@@ -64,7 +69,15 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
     error EmptyArray();
     error IncorrectLengths();
 
+    error NotSetup();
     error InvalidNewDeadline();
+
+    error IncorrectCaller();
+    error WithdrawDisabled();
+    error PrematureWithdrawal();
+
+    error IsFrozen();
+    error NotFrozen();
 // ------------------------------------
 
 // --- events
@@ -111,7 +124,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
             }
         }
 
-        // replay attack protection: check that signature has already been used
+        // check that the user has not previously claimed for round
         if (hasClaimed[msg.sender][round] == 1) revert UserHasClaimed();
        
         // sig.verification
@@ -218,15 +231,16 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
      * @param allocations Array of token allocation per round
      */
     function setupRounds(uint128[] calldata startTimes, uint128[] calldata allocations) external onlyOwner {
-        require(setupComplete == 0, "Already setup");
+        // can only be ran once
+        if(setupComplete == 1) revert AlreadySetup();
 
         // input validation
         uint256 startTimesLength = startTimes.length;
         uint256 allocationsLength = allocations.length;
-        
-        require(startTimesLength > 0, "Empty array");
-        require(startTimesLength == allocationsLength, "Incorrect lengths");
-        
+
+        if(startTimesLength == 0) revert EmptyArray(); 
+        if(startTimesLength != allocationsLength) revert IncorrectLengths();
+
         // update rounds
         uint256 totalAmount;
         uint256 prevStartTime = block.timestamp;
@@ -236,11 +250,11 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
             uint128 allocation = allocations[i];
             
             // startTime check
-            require(startTime > prevStartTime, "Incorrect startTime");
+            if(startTime <= prevStartTime) revert IncorrectStartTime();
             prevStartTime = startTime;
 
-            // allocation check
-            require(allocation > 0, "Incorrect allocation");
+            // allocation check: non-zero
+            if(allocation == 0) revert IncorrectAllocation();
 
             // update storage 
             allRounds[i] = RoundData({startTime: startTime, allocation: allocation, deposited:0, claimed:0});
@@ -265,6 +279,8 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
      * @param newDeadline must be after last claim round + 14 days
      */
     function updateDeadline(uint256 newDeadline) external onlyOwner {
+        // can only be called after setupRounds 
+        if(setupComplete == 0) revert NotSetup();
 
         // allow for 14 days buffer: prevent malicious premature ending
         if (newDeadline < lastClaimTime + 14 days) revert InvalidNewDeadline();
@@ -299,7 +315,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
      * @param rounds Array of rounds which are being financed. First round index = 0.
      */
     function deposit(uint256[] calldata rounds) external {
-        require(msg.sender == operator, "Incorrect caller");
+        if(msg.sender != operator) revert IncorrectCaller(); 
 
         // input validation
         uint256 roundsLength = rounds.length;
@@ -343,17 +359,13 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
      * @dev Only possible if deadline has been defined and exceeded
      */
     function withdraw() external {
-        require(msg.sender == operator, "Incorrect caller");
+        if(msg.sender != operator) revert IncorrectCaller(); 
 
         // if deadline is not defined; cannot withdraw
-        if(deadline == 0) {
-            revert ("Withdraw disabled");
-        }
+        if(deadline == 0) revert WithdrawDisabled();
         
-        // if deadline is defined
-        else {      
-            require(block.timestamp > deadline, "Premature withdraw");
-        }
+        // can only withdraw after deadline
+        if(block.timestamp <= deadline) revert PrematureWithdrawal();
 
         uint256 available = totalDeposited - totalClaimed;
 
@@ -378,7 +390,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
      * @notice Unpause claim. Cannot unpause once frozen
      */
     function unpause() external onlyOwner whenPaused {
-        require(isFrozen == 0, "Frozen");
+        if(isFrozen == 1) revert IsFrozen(); 
 
         _unpause();
     }
@@ -394,7 +406,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
             Enables emergencyExit() to be called.
      */
     function freeze() external whenPaused onlyOwner {
-        require(isFrozen == 0, "Frozen");
+        if(isFrozen == 1) revert IsFrozen(); 
         
         isFrozen = 1;
 
@@ -409,7 +421,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
      * @param receiver Address of beneficiary of transfer
      */
     function emergencyExit(address receiver) external whenPaused onlyOwner {
-        require(isFrozen == 1, "Not frozen");
+        if(isFrozen == 0) revert NotFrozen();
 
         uint256 balance = TOKEN.balanceOf(address(this));
 

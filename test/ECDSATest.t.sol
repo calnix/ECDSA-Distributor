@@ -214,7 +214,7 @@ contract StateSetupTest is StateSetup {
             allocations[0] = userATokens/2 + userBTokens/2 + userCTokens/2;
             allocations[1] = userATokens/2 + userBTokens/2 + userCTokens/2;
 
-        vm.expectRevert("Already setup");
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.AlreadySetup.selector));
 
         vm.prank(owner);
         distributor.setupRounds(startTimes, allocations);
@@ -235,7 +235,7 @@ contract StateSetupTest is StateSetup {
             rounds[1] = 1;
 
         vm.prank(userC);
-        vm.expectRevert("Incorrect caller");
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.IncorrectCaller.selector));
         distributor.deposit(rounds);
     }
 
@@ -308,7 +308,7 @@ contract StateDepositedTest is StateDeposited {
 
     function testNonOperatorCannotWithdraw() public {
 
-        vm.expectRevert("Incorrect caller"); 
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.IncorrectCaller.selector));
 
         vm.prank(userC);
         distributor.withdraw();
@@ -316,7 +316,7 @@ contract StateDepositedTest is StateDeposited {
 
     function testCannotWithdrawIfNoDeadline() public {
 
-        vm.expectRevert("Withdraw disabled"); 
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.WithdrawDisabled.selector));
 
         vm.prank(operator);
         distributor.withdraw();
@@ -534,7 +534,7 @@ contract StateBothRoundsClaimedTest is StateBothRoundsClaimed {
     
     function testCannotWithdraw_SinceNoDeadline() public {
 
-        vm.expectRevert("Withdraw disabled");
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.WithdrawDisabled.selector));
 
         vm.prank(operator);   
         distributor.withdraw();
@@ -682,7 +682,7 @@ contract StateUpdateDeadlineTest is StateUpdateDeadline {
     function testCannotWithdraw_BeforeDeadline() public {
         vm.warp(deadline - 1);
 
-        vm.expectRevert("Premature withdraw");
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.PrematureWithdrawal.selector));
 
         vm.prank(operator);   
         distributor.withdraw();
