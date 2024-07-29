@@ -185,7 +185,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
 
             RoundData memory roundData = allRounds[round];
 
-            // replay attack protection: check that signature has already been used
+            // check that the user has not previously claimed for round
             if (hasClaimed[msg.sender][round] == 1) revert UserHasClaimed();
 
             // sanity checks: round financed, started

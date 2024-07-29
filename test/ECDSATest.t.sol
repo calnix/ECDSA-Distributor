@@ -390,6 +390,26 @@ abstract contract StateRoundTwo is StateRoundOne {
 
 contract StateRoundTwoTest is StateRoundTwo {
 
+    function testCannotClaimMultipleRepeatedly() public {
+         uint128[] memory rounds = new uint128[](2);
+            rounds[0] = 0;
+            rounds[1] = 0;
+
+        uint128[] memory amounts = new uint128[](2);
+            amounts[0] = userBTokens/2;
+            amounts[1] = userBTokens/2;
+        
+        bytes[] memory signatures = new bytes[](2);
+            signatures[0] = userBRound1;
+            signatures[1] = userBRound1;
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.UserHasClaimed.selector));
+
+        vm.prank(userB);
+        distributor.claimMultiple(rounds, amounts, signatures);
+        
+    }
+
     function testCanClaimMultiple_UserB() public {
         
         uint128[] memory rounds = new uint128[](2);
@@ -800,3 +820,16 @@ contract StateFrozenTest is StateFrozen {
     }
 }
 
+import { ERC20Reentrant } from "openzeppelin-contracts/contracts/mocks/token/ERC20Reentrant.sol";
+
+abstract contract StateCallbackTokens is StateFrozen {
+
+    ERC20Reentrant public mockCallbackToken;
+
+    function setUp() public override virtual {
+        super.setUp();
+        
+
+        mockCallbackToken = new ERC20Reentrant();
+    }    
+}
