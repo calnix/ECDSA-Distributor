@@ -819,17 +819,3 @@ contract StateFrozenTest is StateFrozen {
         assertEq(token.balanceOf(owner), balance);
     }
 }
-
-import { ERC20Reentrant } from "openzeppelin-contracts/contracts/mocks/token/ERC20Reentrant.sol";
-
-abstract contract StateCallbackTokens is StateFrozen {
-
-    ERC20Reentrant public mockCallbackToken;
-
-    function setUp() public override virtual {
-        super.setUp();
-        
-
-        mockCallbackToken = new ERC20Reentrant();
-    }    
-}
