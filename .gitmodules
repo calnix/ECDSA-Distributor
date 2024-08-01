@@ -4,6 +4,3 @@
 [submodule "lib/openzeppelin-contracts"]
 	path = lib/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
-[submodule "lib/switcheo-eth"]
-	path = lib/switcheo-eth
-	url = https://github.com/Switcheo/switcheo-eth

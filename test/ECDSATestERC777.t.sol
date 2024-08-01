@@ -8,8 +8,10 @@ import "openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
 import "openzeppelin-contracts/contracts/utils/cryptography/EIP712.sol";
 import {Pausable} from "openzeppelin-contracts/contracts/utils/Pausable.sol";
 
-import { ERC777 } from "lib/switcheo-eth/contracts/lib/token/ERC777/ERC777.sol";
 
+import { MockCallbackToken, ERC20Reentrant } from "test/MockCallbackToken.sol";
+import { MockAttackContract } from "test/MockAttackContract.sol"; 
+ 
 /**
 
 user -> attack contract -> distributor -> token callback -> attack contract -> distributor,
@@ -20,6 +22,7 @@ abstract contract StateDeploy is Test {
 
     ECDSADistributor public distributor;
     MockCallbackToken public token;
+    MockAttackContract public attackerContract;
 
     // entities
     address public userA;
@@ -28,6 +31,7 @@ abstract contract StateDeploy is Test {
     address public owner;
     address public operator;
     address public storedSigner;
+    address public attacker;
 
     uint256 public storedSignerPrivateKey;
 
@@ -36,6 +40,7 @@ abstract contract StateDeploy is Test {
     uint128 public userBTokens;
     uint128 public userCTokens;
     uint128 public operatorTokens;
+    uint128 public attackerTokens;
 
     // round balances
     uint128 totalAmountForAllRounds;
@@ -51,6 +56,9 @@ abstract contract StateDeploy is Test {
     
     bytes public userCRound1;
     bytes public userCRound2;
+
+    bytes public attackerRound1;
+    bytes public attackerRound2;
     
 // --- events
     event Claimed(address indexed user, uint128 indexed round, uint128 amount);
@@ -73,15 +81,17 @@ abstract contract StateDeploy is Test {
         userC = makeAddr("userC");
         owner = makeAddr("owner");
         operator = makeAddr("operator");
+        attacker = makeAddr("attacker");
 
         // signer
         (storedSigner, storedSignerPrivateKey) = makeAddrAndKey("storedSigner");
 
         // tokens
-        userATokens = 20 ether;
+        userATokens = 20 ether; 
         userBTokens = 50 ether;
         userCTokens = 80 ether;
-        operatorTokens = (userATokens + userBTokens + userCTokens);
+        attackerTokens = 20 ether;
+        operatorTokens = (userATokens + userBTokens + userCTokens + attackerTokens);
         
         // rounds
         totalAmountForAllRounds = operatorTokens;
@@ -95,6 +105,9 @@ abstract contract StateDeploy is Test {
         string memory name = "TestDistributor";
         string memory version = "v1";
         distributor = new ECDSADistributor(name, version, address(token), storedSigner, owner, operator);
+
+        // attacker contract
+        attackerContract = new MockAttackContract(address(distributor));
 
         // mint tokens
         token.mint(operator, operatorTokens);
@@ -115,6 +128,9 @@ abstract contract StateDeploy is Test {
 
         userCRound1 = generateSignature(userC, 0, userCTokens/2);
         userCRound2 = generateSignature(userC, 1, userCTokens/2);
+
+        attackerRound1 = generateSignature(address(attackerContract), 0, userATokens/2);
+        attackerRound2 = generateSignature(address(attackerContract), 1, userATokens/2);
 
         // starting point: T0
         vm.warp(30 days);        
@@ -197,56 +213,56 @@ abstract contract StateRoundTwo is StateRoundOne {
 }
 
 
-contract StateCallbackTokenTest is StateRoundTwo {
+contract StateAttackerTest is StateRoundTwo {
 
-    function testCannotClaimCallback() public {
+    function testAttackerCannotClaimTwice() public {
 
         // setup reentry
         ERC20Reentrant.Type when = ERC20Reentrant.Type.After;
-        address target = address(distributor);
+        address target = address(attackerContract);
 
-        uint128 round = 1;
-        uint128 amount = userATokens/2; 
-        bytes memory signature = userARound2;
+        uint128 round = 0;
+        uint128 amount = attackerTokens/2; 
+        bytes memory signature = attackerRound1;
 
         bytes memory data = abi.encodeWithSignature("claim(uint128,uint128,bytes)", round, amount, signature);
 
         token.scheduleReenter(when, target, data);
 
         // call w/ reentry
-        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.InvalidSignature.selector));
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.UserHasClaimed.selector));
 
-        vm.prank(userA);
-        distributor.claim(1, userATokens/2, userARound2);
+        vm.prank(attacker);
+        attackerContract.claim(round, amount, signature);
     }
 
-    function testCannotClaimMultipleCallback() public {
+    function testAttackerCannotClaimMultipleTwice() public {
 
         // setup reentry
         ERC20Reentrant.Type when = ERC20Reentrant.Type.After;
-        address target = address(distributor);
+        address target = address(attackerContract);
 
          uint128[] memory rounds = new uint128[](2);
             rounds[0] = 0;
             rounds[1] = 1;
 
         uint128[] memory amounts = new uint128[](2);
-            amounts[0] = userBTokens/2;
-            amounts[1] = userBTokens/2;
+            amounts[0] = attackerTokens/2;
+            amounts[1] = attackerTokens/2;
         
         bytes[] memory signatures = new bytes[](2);
-            signatures[0] = userBRound1;
-            signatures[1] = userBRound2;
+            signatures[0] = attackerRound1;
+            signatures[1] = attackerRound2;
 
         bytes memory data = abi.encodeWithSignature("claimMultiple(uint128[],uint128[],bytes[])", rounds, amounts, signatures);
 
         token.scheduleReenter(when, target, data);
 
         // call w/ reentry
-        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.InvalidSignature.selector));
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.UserHasClaimed.selector));
 
         vm.prank(userB);
-        distributor.claimMultiple(rounds, amounts, signatures);
+        attackerContract.claimMultiple(rounds, amounts, signatures);
 
     }
 }
