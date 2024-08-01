@@ -8,7 +8,13 @@ import "openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
 import "openzeppelin-contracts/contracts/utils/cryptography/EIP712.sol";
 import {Pausable} from "openzeppelin-contracts/contracts/utils/Pausable.sol";
 
-import { MockCallbackToken, ERC20Reentrant } from "test/MockCallbackToken.sol";
+import { ERC777 } from "lib/switcheo-eth/contracts/lib/token/ERC777/ERC777.sol";
+
+/**
+
+user -> attack contract -> distributor -> token callback -> attack contract -> distributor,
+
+*/ 
 
 abstract contract StateDeploy is Test {    
 
