@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import {Test, console} from "forge-std/Test.sol";
+import { Test, console2, stdStorage, StdStorage } from "forge-std/Test.sol";
+
 import "../src/ECDSADistributor.sol";
 
 import {ERC20Mock} from "openzeppelin-contracts/contracts/mocks/token/ERC20Mock.sol";
@@ -10,6 +11,7 @@ import "openzeppelin-contracts/contracts/utils/cryptography/EIP712.sol";
 import {Pausable} from "openzeppelin-contracts/contracts/utils/Pausable.sol";
 
 abstract contract StateDeploy is Test {    
+    using stdStorage for StdStorage;
 
     ECDSADistributor public distributor;
     ERC20Mock public token;
@@ -129,13 +131,86 @@ abstract contract StateDeploy is Test {
 //      t = 30 days
 contract StateDeployTest is StateDeploy {
 
-    // cannot claim
     function testUserCannotClaim() public {
         
         vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.RoundNotFinanced.selector));
 
         vm.prank(userA);        
         distributor.claim(0, userATokens/2, userARound1);
+    }
+
+    function testCannotUpdateDeadlineIfNotSetup() public {
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.NotSetup.selector));
+
+        vm.prank(owner);
+        distributor.updateDeadline(12);
+    }
+
+    function testCannotDeposit_RoundNotSetup() public {
+        uint256[] memory rounds = new uint256[](2);
+            rounds[0] = 0;
+            rounds[1] = 1;
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.RoundNotSetup.selector));
+
+        vm.prank(operator);
+        distributor.deposit(rounds);        
+    }
+
+    function testCannotSetup_EmptyArray() public {
+        uint128[] memory startTimes;            
+        uint128[] memory allocations;
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.EmptyArray.selector));
+
+        vm.prank(owner);
+        distributor.setupRounds(startTimes, allocations);
+    }
+
+    function testCannotSetup_IncorrectLengths() public {
+        uint128[] memory startTimes = new uint128[](3);
+            startTimes[0] = (30 days + 2 days);
+            startTimes[1] = (30 days + 3 days);
+
+        uint128[] memory allocations = new uint128[](2);
+            allocations[0] = totalAmountForRoundOne;
+            allocations[1] = totalAmountForRoundTwo;
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.IncorrectLengths.selector));
+
+        vm.prank(owner);
+        distributor.setupRounds(startTimes, allocations);
+    }
+
+    function testCannotSetup_IncorrectStartTimes() public {
+        uint128[] memory startTimes = new uint128[](2);
+            startTimes[0] = (30 days + 2 days);
+            startTimes[1] = startTimes[0];
+
+        uint128[] memory allocations = new uint128[](2);
+            allocations[0] = totalAmountForRoundOne;
+            allocations[1] = totalAmountForRoundTwo;
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.IncorrectStartTime.selector));
+
+        vm.prank(owner);
+        distributor.setupRounds(startTimes, allocations);
+    }
+
+    function testCannotSetup_IncorrectAllocation() public {
+        uint128[] memory startTimes = new uint128[](2);
+            startTimes[0] = (30 days + 2 days);
+            startTimes[1] = (30 days + 3 days);
+
+        uint128[] memory allocations = new uint128[](2);
+            allocations[0] = totalAmountForRoundOne;
+            allocations[1] = 0;
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.IncorrectAllocation.selector));
+
+        vm.prank(owner);
+        distributor.setupRounds(startTimes, allocations);
     }
 
     function testSetupRounds() public {
@@ -160,7 +235,6 @@ contract StateDeployTest is StateDeploy {
         distributor.setupRounds(startTimes, allocations);
 
         // check storage vars
-//        assertEq(distributor.firstClaimTime(), startTimes[0]);
         assertEq(distributor.lastClaimTime(),  startTimes[1]);
         assertEq(distributor.numberOfRounds(), startTimes.length);
 
@@ -178,6 +252,7 @@ contract StateDeployTest is StateDeploy {
         assertEq(deposited_2, 0);
         assertEq(claimed_2, 0);
     }
+
 }
 
 //Note: Owner set ups rounnds on distributor contract
@@ -220,12 +295,31 @@ contract StateSetupTest is StateSetup {
         distributor.setupRounds(startTimes, allocations);
     }
 
-    function testUserCannotClaim() public {
+    function testUserCannotClaim_RoundNotFinanced() public {
         
         vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.RoundNotFinanced.selector));
 
         vm.prank(userA);        
         distributor.claim(0, userATokens/2, userARound1);
+    }
+
+    function testCannotClaimMultiple_RoundNotFinanced() public {
+        uint128[] memory rounds = new uint128[](2);
+            rounds[0] = 0;
+            rounds[1] = 1;
+
+        uint128[] memory amounts = new uint128[](2);
+            amounts[0] = userBTokens/2;
+            amounts[1] = userBTokens/2;
+        
+        bytes[] memory signatures = new bytes[](2);
+            signatures[0] = userBRound1;
+            signatures[1] = userBRound2;
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.RoundNotFinanced.selector));
+
+        vm.prank(userB);
+        distributor.claimMultiple(rounds, amounts, signatures);
     }
 
     function testNonOperatorCannotDeposit() public {
@@ -236,6 +330,15 @@ contract StateSetupTest is StateSetup {
 
         vm.prank(userC);
         vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.IncorrectCaller.selector));
+        distributor.deposit(rounds);
+    }
+
+    function testCannotDeposit_EmptyArray() public {
+        uint256[] memory rounds;
+    
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.EmptyArray.selector));
+
+        vm.prank(operator);
         distributor.deposit(rounds);
     }
 
@@ -291,6 +394,49 @@ abstract contract StateDeposited is StateSetup {
 }
 
 contract StateDepositedTest is StateDeposited {
+
+    function testCannotDeposit_RoundAlreadyFinanced() public {
+    
+        uint256[] memory rounds = new uint256[](2);
+            rounds[0] = 0;
+            rounds[1] = 1;
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.RoundAlreadyFinanced.selector));
+
+        vm.prank(operator);
+        distributor.deposit(rounds);        
+    
+    }
+
+    function testCannotClaim_RoundNotStarted() public {
+
+        // round params
+        uint128 round = 0; 
+        uint128 amount = userATokens/2;     
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.RoundNotStarted.selector));
+
+        vm.prank(userA);
+        distributor.claim(round, amount, userARound1);
+    }
+
+    function testCannotClaimMultiple_RoundNotStarted() public {
+        uint128[] memory rounds = new uint128[](2);
+            rounds[0] = 0;
+            rounds[1] = 1;
+
+        uint128[] memory amounts = new uint128[](2);
+            amounts[0] = userBTokens/2;
+            amounts[1] = userBTokens/2;
+        
+        bytes[] memory signatures = new bytes[](2);
+            signatures[0] = userBRound1;
+            signatures[1] = userBRound2;
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.RoundNotStarted.selector));
+
+        vm.prank(userB);
+        distributor.claimMultiple(rounds, amounts, signatures);
+    }
 
     function testCannotDoubleDeposit() public {
         uint256[] memory rounds = new uint256[](2);
@@ -375,6 +521,21 @@ contract StateRoundOneTest is StateRoundOne {
         vm.prank(userA);
         distributor.claim(0, userATokens/2, userARound1);
     }
+
+    function testCannotClaim_RoundFullyClaimed() public {
+
+        stdstore.target(address(distributor))
+            .sig(distributor.allRounds.selector)
+            .with_key(0)
+            .depth(3)   //roundData.claimed
+            .checked_write(10000 ether);
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.RoundFullyClaimed.selector));
+
+        vm.prank(userA);
+        distributor.claim(0, userATokens/2, userARound1);    
+
+    }
 }
 
 //  t = 33 days
@@ -390,8 +551,39 @@ abstract contract StateRoundTwo is StateRoundOne {
 
 contract StateRoundTwoTest is StateRoundTwo {
 
+    function testCannotClaimMultiple_IncorrectLengths() public {
+        uint128[] memory rounds = new uint128[](3);
+            rounds[0] = 0;
+            rounds[1] = 1;
+            rounds[2] = 2;
+
+        uint128[] memory amounts = new uint128[](2);
+            amounts[0] = userBTokens/2;
+            amounts[1] = userBTokens/2;
+        
+        bytes[] memory signatures = new bytes[](2);
+            signatures[0] = userBRound1;
+            signatures[1] = userBRound2;
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.IncorrectLengths.selector));
+
+        vm.prank(userB);
+        distributor.claimMultiple(rounds, amounts, signatures);
+    }
+
+    function testCannotClaimMultiple_EmptyArrays() public {
+        uint128[] memory rounds;
+        uint128[] memory amounts;
+        bytes[] memory signatures;
+            
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.EmptyArray.selector));
+
+        vm.prank(userB);
+        distributor.claimMultiple(rounds, amounts, signatures);
+    }
+
     function testCannotClaimMultipleRepeatedly() public {
-         uint128[] memory rounds = new uint128[](2);
+        uint128[] memory rounds = new uint128[](2);
             rounds[0] = 0;
             rounds[1] = 0;
 
@@ -518,7 +710,6 @@ abstract contract StateBothRoundsClaimed is StateRoundTwo {
     }
 }
 
-//  t = 33 days
 contract StateBothRoundsClaimedTest is StateBothRoundsClaimed {
 
     function testClaimForRoundOneAndTwo_UserA_UserB() public {
@@ -624,6 +815,29 @@ contract StateUpdateDeadlineTest is StateUpdateDeadline {
     
         vm.prank(userC);        
         distributor.claim(0, userCTokens/2, userCRound1);
+    }
+
+    function testCannotClaimMultipleAfterDeadline() public {
+                
+        vm.warp(deadline);
+
+        // userC params
+        uint128[] memory rounds = new uint128[](2);
+            rounds[0] = 0;
+            rounds[1] = 1;
+
+        uint128[] memory amounts = new uint128[](2);
+            amounts[0] = userCTokens/2;
+            amounts[1] = userCTokens/2;
+        
+        bytes[] memory signatures = new bytes[](2);
+            signatures[0] = userCRound1;
+            signatures[1] = userCRound2;
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.DeadlineExceeded.selector));
+
+        vm.prank(userC);        
+        distributor.claimMultiple(rounds, amounts, signatures);
     }
 
     function testCanClaimBeforeDeadline() public {
@@ -777,14 +991,28 @@ contract StatePausedTest is StatePaused {
         distributor.claimMultiple(rounds, amounts, signatures);    
     }
 
-    function testFreezeContract() public {
+    function testCannotEmergencyExitIfNotFrozen() public {
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.NotFrozen.selector));
+     
+        vm.prank(owner);
+        distributor.emergencyExit(owner);
+    }
+
+    function testOwnerCanUnpauseIfNotFrozen() public {
+        vm.prank(owner);
+        distributor.unpause();
+
+        assertEq(distributor.paused(), false);        
+    }
+
+    function testOwnerCanFreezeContract() public {
 
         assertEq(distributor.isFrozen(), 0);
 
         // check events
-        vm.expectEmit(true, false, false, false);
+        vm.expectEmit(true, true, false, false);
         emit Frozen(block.timestamp);
-        
 
         vm.prank(owner);
         distributor.freeze();
@@ -804,6 +1032,22 @@ abstract contract StateFrozen is StatePaused {
 }
 
 contract StateFrozenTest is StateFrozen {
+
+    function testCannotFreezeTwice() public {
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.IsFrozen.selector));
+
+        vm.prank(owner);
+        distributor.freeze();
+    }
+
+    function testCannotUnpauseIfFrozen() public {
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.IsFrozen.selector));
+
+        vm.prank(owner);
+        distributor.unpause();
+    }
 
     function testEmergencyExit() public {
         

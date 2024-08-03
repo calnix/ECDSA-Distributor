@@ -11,8 +11,8 @@ import {Pausable} from "openzeppelin-contracts/contracts/utils/Pausable.sol";
 contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
     using SafeERC20 for IERC20;
 
-    IERC20 internal immutable TOKEN;
-    address internal immutable STORED_SIGNER;
+    IERC20 public immutable TOKEN;
+    address public immutable STORED_SIGNER;
 
     address public operator;
     
@@ -83,14 +83,13 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
 // --- events
 
     event Claimed(address indexed user, uint128 indexed round, uint128 amount);
-    event ClaimedMultiple(address indexed user, uint128[] indexed rounds, uint128 totalAmount);
+    event ClaimedMultiple(address indexed user, uint128[] rounds, uint128 totalAmount);
     event SetupRounds(uint256 indexed numOfRounds, uint256 indexed firstClaimTime, uint256 indexed lastClaimTime, uint256 totalAmount);
     event AddedRounds(uint256 indexed numOfRounds, uint256 indexed totalAmount, uint256 indexed lastClaimTime);
     event DeadlineUpdated(uint256 indexed newDeadline);
     event Deposited(address indexed operator, uint256 indexed amount);
     event Withdrawn(address indexed operator, uint256 indexed amount);
     event OperatorUpdated(address indexed oldOperator, address indexed newOperator);
-
     event Frozen(uint256 indexed timestamp);
     event EmergencyExit(address indexed receiver, uint256 indexed balance);
 
@@ -267,7 +266,6 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
         numberOfRounds = startTimesLength;
         lastClaimTime = startTimes[startTimesLength-1];
         setupComplete = 1;
-
 
         emit SetupRounds(startTimesLength, startTimes[0], startTimes[startTimesLength-1], totalAmount);
     }
