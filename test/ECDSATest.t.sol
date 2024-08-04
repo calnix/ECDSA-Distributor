@@ -214,7 +214,16 @@ contract StateDeployTest is StateDeploy {
         distributor.setupRounds(startTimes, allocations);
     }
 
-    function testSetupRounds() public {
+    function testOwnerCanChangeOperator(address someAddr) public {
+        assertEq(distributor.operator(), operator);
+
+        vm.prank(owner);
+        distributor.updateOperator(someAddr);      
+
+        assertEq(distributor.operator(), someAddr);
+    }
+
+    function testOwnerCanSetupRounds() public {
 
         uint128[] memory startTimes = new uint128[](2);
             startTimes[0] = (30 days + 2 days);
