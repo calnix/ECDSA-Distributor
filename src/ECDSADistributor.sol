@@ -8,6 +8,8 @@ import {SafeERC20, IERC20} from "./../lib/openzeppelin-contracts/contracts/token
 import {Ownable2Step, Ownable} from "openzeppelin-contracts/contracts/access/Ownable2Step.sol";
 import {Pausable} from "openzeppelin-contracts/contracts/utils/Pausable.sol";
 
+import "./Events.sol";
+
 contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
     using SafeERC20 for IERC20;
 
@@ -79,22 +81,6 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
     error IsFrozen();
     error NotFrozen();
 // ------------------------------------
-
-// --- events
-
-    event Claimed(address indexed user, uint128 indexed round, uint128 amount);
-    event ClaimedMultiple(address indexed user, uint128[] rounds, uint128 totalAmount);
-    event SetupRounds(uint256 indexed numOfRounds, uint256 indexed firstClaimTime, uint256 indexed lastClaimTime, uint256 totalAmount);
-    event AddedRounds(uint256 indexed numOfRounds, uint256 indexed totalAmount, uint256 indexed lastClaimTime);
-    event DeadlineUpdated(uint256 indexed newDeadline);
-    event Deposited(address indexed operator, uint256 indexed amount);
-    event Withdrawn(address indexed operator, uint256 indexed amount);
-    event OperatorUpdated(address indexed oldOperator, address indexed newOperator);
-    event Frozen(uint256 indexed timestamp);
-    event EmergencyExit(address indexed receiver, uint256 indexed balance);
-
-// ------------------------------------
-
     constructor(string memory name, string memory version, address token, address storedSigner, address owner, address operator_) EIP712(name, version) Ownable(owner) {
         
         TOKEN = IERC20(token);

@@ -8,12 +8,12 @@ import "openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
 import "openzeppelin-contracts/contracts/utils/cryptography/EIP712.sol";
 import {Pausable} from "openzeppelin-contracts/contracts/utils/Pausable.sol";
 
-import { MockCallbackToken, ERC20Reentrant } from "test/MockCallbackToken.sol";
+import { MockTaxToken } from "test/MockTaxToken.sol";
 
 abstract contract StateDeploy is Test {    
 
     ECDSADistributor public distributor;
-    MockCallbackToken public token;
+    MockTaxToken public token;
 
     // entities
     address public userA;
@@ -22,6 +22,7 @@ abstract contract StateDeploy is Test {
     address public owner;
     address public operator;
     address public storedSigner;
+    address public attacker;
 
     uint256 public storedSignerPrivateKey;
 
@@ -30,6 +31,7 @@ abstract contract StateDeploy is Test {
     uint128 public userBTokens;
     uint128 public userCTokens;
     uint128 public operatorTokens;
+    uint128 public attackerTokens;
 
     // round balances
     uint128 totalAmountForAllRounds;
@@ -45,10 +47,13 @@ abstract contract StateDeploy is Test {
     
     bytes public userCRound1;
     bytes public userCRound2;
+
+    bytes public attackerRound1;
+    bytes public attackerRound2;
     
 // --- events
     event Claimed(address indexed user, uint128 indexed round, uint128 amount);
-    event ClaimedMultiple(address indexed user, uint128[] rounds, uint128 totalAmount);
+    event ClaimedMultiple(address indexed user, uint128[] indexed rounds, uint128 totalAmount);
     event SetupRounds(uint256 indexed numOfRounds, uint256 indexed firstClaimTime, uint256 indexed lastClaimTime, uint256 totalAmount);
     event AddedRounds(uint256 indexed numOfRounds, uint256 indexed totalAmount, uint256 indexed lastClaimTime);
     event DeadlineUpdated(uint256 indexed newDeadline);
@@ -67,15 +72,17 @@ abstract contract StateDeploy is Test {
         userC = makeAddr("userC");
         owner = makeAddr("owner");
         operator = makeAddr("operator");
+        attacker = makeAddr("attacker");
 
         // signer
         (storedSigner, storedSignerPrivateKey) = makeAddrAndKey("storedSigner");
 
         // tokens
-        userATokens = 20 ether;
+        userATokens = 20 ether; 
         userBTokens = 50 ether;
         userCTokens = 80 ether;
-        operatorTokens = (userATokens + userBTokens + userCTokens);
+        attackerTokens = 20 ether;
+        operatorTokens = (userATokens + userBTokens + userCTokens + attackerTokens);
         
         // rounds
         totalAmountForAllRounds = operatorTokens;
@@ -84,7 +91,7 @@ abstract contract StateDeploy is Test {
         // contracts
         vm.startPrank(owner);
         
-        token = new MockCallbackToken();       
+        token = new MockTaxToken();       
         
         string memory name = "TestDistributor";
         string memory version = "v1";
@@ -148,99 +155,17 @@ abstract contract StateSetup is StateDeploy {
     }
 }
 
-abstract contract StateDeposited is StateSetup {
+contract StateDepositTaxToken is StateSetup {
 
-    function setUp() public override virtual {
-        super.setUp();
-
+    function testCannotDepositTaxToken() public {
         uint256[] memory rounds = new uint256[](2);
             rounds[0] = 0;
             rounds[1] = 1;
 
-        // for all rounds
-        uint256 totalAmount = userATokens + userBTokens + userCTokens;
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.TaxTokenCheckFailed.selector));
 
         vm.prank(operator);
         distributor.deposit(rounds);
     }
-}
 
-//      t = 31 days
-abstract contract StateRoundOne is StateDeposited {
-
-    function setUp() public override virtual {
-        super.setUp();
-
-        // forward to first round claim time
-        vm.warp(30 days + 2 days);
-
-        vm.prank(userA);
-        distributor.claim(0, userATokens/2, userARound1);
-    }
-}
-
-//  t = 33 days
-abstract contract StateRoundTwo is StateRoundOne {
-
-    function setUp() public override virtual {
-        super.setUp();
-
-        // forward to second round claim time
-        vm.warp(30 days + 3 days);
-    }
-}
-
-
-contract StateCallbackTokenTest is StateRoundTwo {
-
-    function testCannotClaimCallback() public {
-
-        // setup reentry
-        ERC20Reentrant.Type when = ERC20Reentrant.Type.After;
-        address target = address(distributor);
-
-        uint128 round = 1;
-        uint128 amount = userATokens/2; 
-        bytes memory signature = userARound2;
-
-        bytes memory data = abi.encodeWithSignature("claim(uint128,uint128,bytes)", round, amount, signature);
-
-        token.scheduleReenter(when, target, data);
-
-        // call w/ reentry
-        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.InvalidSignature.selector));
-
-        vm.prank(userA);
-        distributor.claim(1, userATokens/2, userARound2);
-    }
-
-    function testCannotClaimMultipleCallback() public {
-
-        // setup reentry
-        ERC20Reentrant.Type when = ERC20Reentrant.Type.After;
-        address target = address(distributor);
-
-         uint128[] memory rounds = new uint128[](2);
-            rounds[0] = 0;
-            rounds[1] = 1;
-
-        uint128[] memory amounts = new uint128[](2);
-            amounts[0] = userBTokens/2;
-            amounts[1] = userBTokens/2;
-        
-        bytes[] memory signatures = new bytes[](2);
-            signatures[0] = userBRound1;
-            signatures[1] = userBRound2;
-
-        bytes memory data = abi.encodeWithSignature("claimMultiple(uint128[],uint128[],bytes[])", rounds, amounts, signatures);
-
-        token.scheduleReenter(when, target, data);
-
-        // call w/ reentry
-        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.InvalidSignature.selector));
-
-        vm.prank(userB);
-        distributor.claimMultiple(rounds, amounts, signatures);
-
-    }
 }
