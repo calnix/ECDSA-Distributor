@@ -214,6 +214,21 @@ contract StateDeployTest is StateDeploy {
         distributor.setupRounds(startTimes, allocations);
     }
 
+    function testDomainSeparator() public {
+
+        string memory name = "TestDistributor";
+        string memory version = "v1";
+        
+        // gen. expected domain sep.
+        bytes32 TYPE_HASH = keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+        bytes32 _hashedName = keccak256(bytes(name));
+        bytes32 _hashedVersion = keccak256(bytes(version));
+
+        bytes32 expectedDomainSeparator = keccak256(abi.encode(TYPE_HASH, _hashedName, _hashedVersion, block.chainid, address(distributor)));
+
+        assertEq(distributor.domainSeparatorV4(), expectedDomainSeparator);
+    }
+
     function testOwnerCanChangeOperator(address someAddr) public {
         assertEq(distributor.operator(), operator);
 
