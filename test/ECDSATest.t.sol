@@ -13,6 +13,7 @@ import {Pausable} from "openzeppelin-contracts/contracts/utils/Pausable.sol";
 abstract contract StateDeploy is Test {    
     using stdStorage for StdStorage;
 
+
     ECDSADistributor public distributor;
     ERC20Mock public token;
 
@@ -49,7 +50,7 @@ abstract contract StateDeploy is Test {
     
 // --- events
     event Claimed(address indexed user, uint128 indexed round, uint128 amount);
-    event ClaimedMultiple(address indexed user, uint128[] indexed rounds, uint128 totalAmount);
+    event ClaimedMultiple(address indexed user, uint128[] rounds, uint128 totalAmount);
     event SetupRounds(uint256 indexed numOfRounds, uint256 indexed firstClaimTime, uint256 indexed lastClaimTime, uint256 totalAmount);
     event AddedRounds(uint256 indexed numOfRounds, uint256 indexed totalAmount, uint256 indexed lastClaimTime);
     event DeadlineUpdated(uint256 indexed newDeadline);
@@ -468,6 +469,22 @@ contract StateDepositedTest is StateDeposited {
         distributor.withdraw();
     }
 
+    function testCannotClaim_InvalidSignature() public {
+        // create invalid signature
+            address user = userA;
+            uint128 round = 0;
+            uint128 amount = userATokens/2;
+        bytes32 digest = distributor.hashTypedDataV4(keccak256(abi.encode(keccak256("Claim(address user,uint128 round,uint128 amount)"), user, round, amount)));
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign((storedSignerPrivateKey - 1), digest);
+        bytes memory invalidSignature = abi.encodePacked(r, s, v);
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.InvalidSignature.selector));
+        
+        vm.prank(userA);
+        distributor.claim(round, amount, invalidSignature);
+    }
+
     function testCanClaim_UserA_RoundOne() public {
         // forward to first round claim time
         vm.warp(30 days + 2 days);
@@ -513,6 +530,8 @@ abstract contract StateRoundOne is StateDeposited {
 }
 
 contract StateRoundOneTest is StateRoundOne {
+    using stdStorage for StdStorage;
+
 
     function testCannotClaimTwice() public {
 
@@ -523,18 +542,52 @@ contract StateRoundOneTest is StateRoundOne {
     }
 
     function testCannotClaim_RoundFullyClaimed() public {
+        
+        // get storage slot for setupComplete -> slot11
+        uint256 setupCompleteSlot = stdstore.target(address(distributor)).sig("setupComplete()").find();
 
-        stdstore.target(address(distributor))
-            .sig(distributor.allRounds.selector)
-            .with_key(0)
-            .depth(3)   //roundData.claimed
-            .checked_write(10000 ether);
+        //allRounds slot
+        uint256 allRoundsSlot = setupCompleteSlot + 1;
+        uint256 allRoundsKey = 0;
 
+        // get starting location of allRounds(0)
+        bytes32 location = keccak256(abi.encode(allRoundsKey, uint256(allRoundsSlot)));
+        emit log_bytes32(location); 
+
+        // add 32 bytes: to get .deposited & .claimed
+        bytes32 locationPlusOne = bytes32(uint256(location) + 1);
+        emit log_bytes32(locationPlusOne); 
+
+        // load slot: .deposited & .claimed
+        bytes32 roundData = vm.load(address(distributor), locationPlusOne);
+        emit log_uint(uint256(roundData)); 
+
+        // unpack
+        bytes16 half1 = bytes16(roundData);     // claimed
+        bytes16 half2 = bytes16(uint128(uint256(roundData)));   // deposited
+        emit log_uint(uint128(half1)); 
+        emit log_uint(uint128(half2)); 
+        
+        // verify
+        uint256 claimed = uint128(half1);
+        uint256 deposited = uint128(half2);
+        assertEq(claimed, userATokens/2);
+        assertEq(deposited, totalAmountForRoundOne);
+
+        // pack overwrite: 0x....claimed...deposited
+        uint256 spoofedClaim = deposited * 2;
+        // Shift the first uint128 value to the left by 128 bits and combine it with the second uint128 value using bitwise OR
+        bytes32 result = bytes32((uint256(spoofedClaim) << 128) | uint256(deposited));
+        emit log_bytes32(result); 
+
+        // write to slot
+        vm.store(address(distributor), bytes32(uint256(locationPlusOne)), result);
+
+        // call contract
         vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.RoundFullyClaimed.selector));
 
-        vm.prank(userA);
-        distributor.claim(0, userATokens/2, userARound1);    
-
+        vm.prank(userB);
+        distributor.claim(0, userBTokens/2, userBRound1);    
     }
 }
 
@@ -550,6 +603,7 @@ abstract contract StateRoundTwo is StateRoundOne {
 }
 
 contract StateRoundTwoTest is StateRoundTwo {
+    using stdStorage for StdStorage;
 
     function testCannotClaimMultiple_IncorrectLengths() public {
         uint128[] memory rounds = new uint128[](3);
@@ -598,8 +652,66 @@ contract StateRoundTwoTest is StateRoundTwo {
         vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.UserHasClaimed.selector));
 
         vm.prank(userB);
-        distributor.claimMultiple(rounds, amounts, signatures);
+        distributor.claimMultiple(rounds, amounts, signatures);    
+    }
+
+    function testCannotClaimMultiple_RoundFullyClaimed() public {
         
+        // get storage slot for setupComplete -> slot11
+        uint256 setupCompleteSlot = stdstore.target(address(distributor)).sig("setupComplete()").find();
+
+        //allRounds slot
+        uint256 allRoundsSlot = setupCompleteSlot + 1;
+        uint256 allRoundsKey = 0;
+
+        // get starting location of allRounds(0)
+        bytes32 location = keccak256(abi.encode(allRoundsKey, uint256(allRoundsSlot)));
+        emit log_bytes32(location); 
+
+        // add 32 bytes: to get .deposited & .claimed
+        bytes32 locationPlusOne = bytes32(uint256(location) + 1);
+        emit log_bytes32(locationPlusOne); 
+
+        // load slot: .deposited & .claimed
+        bytes32 roundData = vm.load(address(distributor), locationPlusOne);
+        emit log_uint(uint256(roundData)); 
+
+        // unpack
+        bytes16 half1 = bytes16(roundData);     // claimed
+        bytes16 half2 = bytes16(uint128(uint256(roundData)));   // deposited
+        emit log_uint(uint128(half1)); 
+        emit log_uint(uint128(half2)); 
+        
+        // verify
+        uint256 claimed = uint128(half1);
+        uint256 deposited = uint128(half2);
+        assertEq(claimed, userATokens/2);
+        assertEq(deposited, totalAmountForRoundOne);
+
+        // pack overwrite: 0x....claimed...deposited
+        uint256 spoofedClaim = deposited * 2;
+        // Shift the first uint128 value to the left by 128 bits and combine it with the second uint128 value using bitwise OR
+        bytes32 result = bytes32((uint256(spoofedClaim) << 128) | uint256(deposited));
+        emit log_bytes32(result); 
+
+        // write to slot
+        vm.store(address(distributor), bytes32(uint256(locationPlusOne)), result);
+
+        // call contract
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.RoundFullyClaimed.selector));
+            uint128[] memory rounds = new uint128[](2);
+                rounds[0] = 0;
+                rounds[1] = 1;
+
+            uint128[] memory amounts = new uint128[](2);
+                amounts[0] = userBTokens/2;
+                amounts[1] = userBTokens/2;
+            
+            bytes[] memory signatures = new bytes[](2);
+                signatures[0] = userBRound1;
+                signatures[1] = userBRound2;
+        vm.prank(userB);
+        distributor.claimMultiple(rounds, amounts, signatures);
     }
 
     function testCanClaimMultiple_UserB() public {
@@ -617,7 +729,7 @@ contract StateRoundTwoTest is StateRoundTwo {
             signatures[1] = userBRound2;
 
         // check events
-        vm.expectEmit(true, true, true, false);
+        vm.expectEmit(true, true, false, false);
         emit ClaimedMultiple(userB, rounds, userBTokens);
 
         vm.prank(userB);

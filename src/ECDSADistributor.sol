@@ -220,7 +220,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
         bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(keccak256("Claim(address user,uint128 round,uint128 amount)"), msg.sender, round, amount)));
 
         address signer = ECDSA.recover(digest, signature);
-            if(signer != STORED_SIGNER) revert InvalidSignature(); 
+        if(signer != STORED_SIGNER) revert InvalidSignature(); 
     }
 
     /**
