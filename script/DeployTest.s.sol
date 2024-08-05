@@ -34,4 +34,4 @@ contract DeployTestnet is Script {
         
 }
 
-// forge script script/DeployTest.s.sol:DeployTestnet --rpc-url sepolia --broadcast --verify -vvvv --etherscan-api-key sepolia --legacy
+// forge script script/DeployTest.s.sol:DeployTestnet --rpc-url sepolia --broadcast --verify -vvvvv --etherscan-api-key sepolia --legacy

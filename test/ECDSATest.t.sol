@@ -51,14 +51,13 @@ abstract contract StateDeploy is Test {
 // --- events
     event Claimed(address indexed user, uint128 indexed round, uint128 amount);
     event ClaimedMultiple(address indexed user, uint128[] rounds, uint128 totalAmount);
-    event SetupRounds(uint256 indexed numOfRounds, uint256 indexed firstClaimTime, uint256 indexed lastClaimTime, uint256 totalAmount);
-    event AddedRounds(uint256 indexed numOfRounds, uint256 indexed totalAmount, uint256 indexed lastClaimTime);
+    event SetupRounds(uint256 numOfRounds, uint256 firstClaimTime, uint256 lastClaimTime, uint256 totalAmount);
     event DeadlineUpdated(uint256 indexed newDeadline);
-    event Deposited(address indexed operator, uint256 indexed amount);
-    event Withdrawn(address indexed operator, uint256 indexed amount);
-    event OperatorUpdated(address indexed oldOperator, address indexed newOperator);
+    event Deposited(address indexed operator, uint256 amount);
+    event Withdrawn(address indexed operator, uint256 amount);
+    event OperatorUpdated(address oldOperator, address newOperator);
     event Frozen(uint256 indexed timestamp);
-    event EmergencyExit(address indexed receiver, uint256 indexed balance);
+    event EmergencyExit(address receiver, uint256 balance);
 
 // ------------------------------------
     function setUp() public virtual {
@@ -253,7 +252,7 @@ contract StateDeployTest is StateDeploy {
         uint256 lastClaimTime = startTimes[1];
 
         // check events
-        vm.expectEmit(true, true, true, false);
+        vm.expectEmit(false, false, false, false);
         emit SetupRounds(2, firstClaimTime, lastClaimTime, (totalAmountForRoundOne + totalAmountForRoundTwo));
 
         vm.prank(owner);
@@ -377,7 +376,7 @@ contract StateSetupTest is StateSetup {
         uint256 totalAmount = totalAmountForRoundOne + totalAmountForRoundTwo;
 
         // check events
-        vm.expectEmit(true, true, false, false);
+        vm.expectEmit(true, false, false, false);
         emit Deposited(operator, totalAmount);
 
         vm.prank(operator);
@@ -936,7 +935,7 @@ contract StateUpdateDeadlineTest is StateUpdateDeadline {
 
     function testCannotClaimAfterDeadline() public {
         
-        vm.warp(deadline);
+        vm.warp(deadline + 1);
 
         vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.DeadlineExceeded.selector));
 
@@ -955,7 +954,7 @@ contract StateUpdateDeadlineTest is StateUpdateDeadline {
 
     function testCannotClaimMultipleAfterDeadline() public {
                 
-        vm.warp(deadline);
+        vm.warp(deadline + 1);
 
         // userC params
         uint128[] memory rounds = new uint128[](2);

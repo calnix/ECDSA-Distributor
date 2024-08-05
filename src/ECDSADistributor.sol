@@ -104,7 +104,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
 
         // check that deadline as not been exceeded; if deadline has been defined
         if (deadline > 0) {
-            if (block.timestamp >= deadline) {
+            if (block.timestamp > deadline) {
                 revert DeadlineExceeded();
             }
         }
@@ -148,7 +148,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
 
         // check that deadline as not been exceeded; if deadline has been defined
         if(deadline > 0) {
-            if (block.timestamp >= deadline) {
+            if (block.timestamp > deadline) {
                 revert DeadlineExceeded();
             }
         }
