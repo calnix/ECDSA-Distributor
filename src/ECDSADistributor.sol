@@ -418,11 +418,18 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
                                 HELPERS
     //////////////////////////////////////////////////////////////*/
 
+    /**
+     * @dev Returns the hash of the fully encoded EIP712 message for this domain
+     *      See EIP712.sol
+     */
     function hashTypedDataV4(bytes32 structHash) external view returns (bytes32) {
         return _hashTypedDataV4(structHash);
     }
 
-    // note: may not need this. check eip712    
+    /**
+     * @dev Returns the domain separator for the current chain
+     *      See EIP712.sol
+     */
     function domainSeparatorV4() external view returns (bytes32) {
         return _domainSeparatorV4();
     }
