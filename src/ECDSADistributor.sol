@@ -10,6 +10,13 @@ import {Pausable} from "openzeppelin-contracts/contracts/utils/Pausable.sol";
 
 import "./Events.sol";
 
+/**
+ * @title ECDSADistributor
+ * @custom:version 1.0
+ * @custom:author Calnix(@cal_nix)
+ * @notice A standalone airdrop distributor based on ECDSA signatures
+ */
+
 contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
     using SafeERC20 for IERC20;
 
