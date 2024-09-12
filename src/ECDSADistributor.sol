@@ -274,7 +274,9 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
         if(setupComplete == 0) revert NotSetup();
 
         // allow for 14 days buffer: prevent malicious premature ending
-        if (newDeadline < lastClaimTime + 14 days) revert InvalidNewDeadline();
+        // if the newDeadline is in the past: can insta-withdraw w/o informing users
+        uint256 latestTime = block.timestamp > (lastClaimTime + 14 days) ? block.timestamp : (lastClaimTime + 14 days);
+        if (newDeadline < latestTime) revert InvalidNewDeadline();
 
         deadline = newDeadline;
         emit DeadlineUpdated(newDeadline);
