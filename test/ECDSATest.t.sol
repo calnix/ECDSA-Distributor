@@ -131,6 +131,13 @@ abstract contract StateDeploy is Test {
 //      t = 30 days
 contract StateDeployTest is StateDeploy {
 
+    function testConstructor() public {
+
+        assertEq(address(distributor.TOKEN()), address(token));
+        assertEq(distributor.STORED_SIGNER(), storedSigner);
+        assertEq(distributor.operator(), operator);
+    }
+
     function testUserCannotClaim() public {
         
         vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.RoundNotFinanced.selector));
@@ -886,7 +893,7 @@ contract StateBothRoundsClaimedTest is StateBothRoundsClaimed {
         distributor.withdraw();
     }
 
-    function testCannotUpdateDeadlineUnderBuffer() public {
+    function testCannotUpdateDeadlineUnderLastClaimTimeBuffer() public {
         assertEq(distributor.deadline(), 0);
    
         uint256 lastClaimTime = distributor.lastClaimTime();
@@ -895,6 +902,15 @@ contract StateBothRoundsClaimedTest is StateBothRoundsClaimed {
 
         vm.prank(owner);
         distributor.updateDeadline(lastClaimTime + 13 days);
+    }
+
+    function testCannotUpdateDeadlineUnderCurrentTimestampBuffer() public {
+        assertEq(distributor.deadline(), 0);
+          
+        vm.expectRevert(abi.encodeWithSelector(ECDSADistributor.InvalidNewDeadline.selector));
+
+        vm.prank(owner);
+        distributor.updateDeadline(block.timestamp + 13 days);
     }
 
     function testOwnerUpdateDeadline() public {  
