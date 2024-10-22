@@ -167,7 +167,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
         if(roundsLength != amountsLength || roundsLength != signaturesLength) revert IncorrectLengths(); 
         if(roundsLength == 0) revert EmptyArray(); 
 
-        uint128 totalAmount;
+        uint256 totalAmount;
         for(uint256 i = 0; i < roundsLength; ++i) {
             
             // get round no. & round data

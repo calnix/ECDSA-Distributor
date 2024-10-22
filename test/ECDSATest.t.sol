@@ -50,7 +50,7 @@ abstract contract StateDeploy is Test {
     
 // --- events
     event Claimed(address indexed user, uint128 indexed round, uint128 amount);
-    event ClaimedMultiple(address indexed user, uint128[] rounds, uint128 totalAmount);
+    event ClaimedMultiple(address indexed user, uint128[] rounds, uint256 totalAmount);
     event SetupRounds(uint256 numOfRounds, uint256 firstClaimTime, uint256 lastClaimTime, uint256 totalAmount);
     event DeadlineUpdated(uint256 indexed newDeadline);
     event Deposited(address indexed operator, uint256 amount);
@@ -760,7 +760,7 @@ contract StateRoundTwoTest is StateRoundTwo {
 
         // check events
         vm.expectEmit(true, true, false, false);
-        emit ClaimedMultiple(userB, rounds, userBTokens);
+        emit ClaimedMultiple(userB, rounds, uint256(userBTokens));
 
         vm.prank(userB);
         distributor.claimMultiple(rounds, amounts, signatures);
