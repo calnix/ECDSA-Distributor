@@ -321,16 +321,18 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
             // get round no. & round data
             uint256 round = rounds[i];
             RoundData storage roundData = allRounds[round];
+            
+            uint128 allocation = roundData.allocation;    
 
             // check that round has been setup
-            if (roundData.allocation == 0) revert RoundNotSetup();
+            if (allocation == 0) revert RoundNotSetup();
 
             // check that round was not previously financed
-            if (roundData.deposited == roundData.allocation) revert RoundAlreadyFinanced();
+            if (roundData.deposited == allocation) revert RoundAlreadyFinanced();
 
             // update deposit and increment
-            roundData.deposited = roundData.allocation;
-            totalAmount += roundData.allocation;
+            roundData.deposited = allocation;
+            totalAmount += allocation;
         }
 
         // update storage
