@@ -64,7 +64,6 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
 
     error DeadlineExceeded();
     error UserHasClaimed();
-    error InvalidRound();
     error TaxTokenCheckFailed();
     
     error RoundNotSetup();
