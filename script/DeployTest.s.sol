@@ -5,6 +5,7 @@ import {Script, console} from "forge-std/Script.sol";
 
 import "./../src/ECDSADistributor.sol";
 import {ERC20Mock} from "./../lib/openzeppelin-contracts/contracts/mocks/token/ERC20Mock.sol";
+import { Test, console2, stdStorage, StdStorage } from "forge-std/Test.sol";
 
 contract DeployTestnet is Script {
 
@@ -21,9 +22,9 @@ contract DeployTestnet is Script {
         mockToken = new ERC20Mock();
 
         string memory name = "test"; 
-        string memory version = "v1";
+        string memory version = "v1.0";
         address token = address(mockToken);
-        address storedSigner = 0xDf56A8382aDAcC45e394a5632a22ef144D37E282;
+        address storedSigner = 0x8C9C001F821c04513616fd7962B2D8c62f925fD2;
         address owner = 0x8C9C001F821c04513616fd7962B2D8c62f925fD2;
         address operator_ = 0x8C9C001F821c04513616fd7962B2D8c62f925fD2;
 
@@ -48,7 +49,7 @@ contract DeployTestnet is Script {
         mockToken.mint(operator_, 20 ether);
         mockToken.approve(address(distributor), 20 ether);
 
-        distributor.deposit(rounds);
+        distributor.deposit(rounds);  
 
         vm.stopBroadcast();
     }
@@ -56,3 +57,34 @@ contract DeployTestnet is Script {
 }
 
 // forge script script/DeployTest.s.sol:DeployTestnet --rpc-url sepolia --broadcast --verify -vvvvv --etherscan-api-key sepolia
+
+
+contract TestClaim is Script, Test {
+
+    ECDSADistributor public distributor;
+
+    function run() public {
+
+        distributor = ECDSADistributor(address(0x264541e2Dc34875943a746174e862aC594164AA2));
+        
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY_TEST");
+        vm.startBroadcast(deployerPrivateKey);    
+
+        // sig.
+        address user = 0x8C9C001F821c04513616fd7962B2D8c62f925fD2; 
+        uint128 round = 0; 
+        uint128 amount = 5 ether;
+        
+        bytes32 digest = distributor.hashTypedDataV4(keccak256(abi.encode(keccak256("Claim(address user,uint128 round,uint128 amount)"), user, round, amount)));
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(deployerPrivateKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+        
+        distributor.claim(round, amount, signature);
+     
+        vm.stopBroadcast();
+    }
+}
+
+
+// forge script script/DeployTest.s.sol:TestClaim --rpc-url sepolia --broadcast -vvvvv

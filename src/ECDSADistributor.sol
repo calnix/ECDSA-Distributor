@@ -34,7 +34,7 @@ contract ECDSADistributor is EIP712, Pausable, Ownable2Step {
     uint256 public totalClaimed;
     uint256 public totalDeposited;
 
-    // emergency state: 1 is Frozed. 0 is not.
+    // emergency state: 1 is Frozen. 0 is not.
     uint256 public isFrozen;
     uint256 public setupComplete;
 
