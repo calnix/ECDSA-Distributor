@@ -6,7 +6,9 @@ import {Script, console} from "forge-std/Script.sol";
 import {ECDSADistributor} from "./../../src/ECDSADistributor.sol";
 
 
-contract DeployRDACTest is Script {
+contract DeployRDACLive is Script {
+
+    ECDSADistributor public distributor;
 
     function run() public {
         
@@ -22,8 +24,8 @@ contract DeployRDACTest is Script {
         string memory version = "v1";
 
         // note: update
-        address token = 0xd3f68c6e8aee820569d58adf8d85d94489315192;
-        address storedSigner = 0xe53a53f88e2a5731223dd206dd62f0a7bea97193;
+        address token = 0xD3F68c6e8AeE820569D58AdF8d85d94489315192;
+        address storedSigner = 0xe53a53F88E2a5731223dd206DD62F0A7Bea97193;
         address operator = 0x6F1F3322473B77838Eee6f5C4D10bb97945FAaaC; //mocadrop.eth
         address owner = deployerAddr;
 
@@ -31,10 +33,10 @@ contract DeployRDACTest is Script {
 
         //-------------- setup
         uint128[] memory startTimes = new uint128[](1);
-            startTimes[0] = uint128(0);         // note: update
+            startTimes[0] = uint128(1747131000);         
 
         uint128[] memory allocations = new uint128[](1);
-            allocations[0] = 10_000_000 ether;  // note: update
+            allocations[0] = 10_000_000 ether;  
 
         distributor.setupRounds(startTimes, allocations);
 
@@ -44,9 +46,11 @@ contract DeployRDACTest is Script {
         distributor.updateDeadline(newDeadline);
 
         //-------------- handover ownership
-        address ownerMulti = address(0);             // note: update
+        address ownerMulti = address(0x80aA3930722B2d941240554471106A56C8fc71f8);  // note: update
         distributor.transferOwnership(ownerMulti);
 
         vm.stopBroadcast();
     }
 }
+
+// forge script script/RDAC/DeployRDACLive.s.sol:DeployRDACLive --rpc-url base --broadcast --verify -vvvvv --etherscan-api-key base
